@@ -20,3 +20,6 @@ HANDOFF*.md
 ONDEVICE*.md
 STUTTER-TEST*.md
 *.internal.md
+
+# Code editor 
+.vscode
