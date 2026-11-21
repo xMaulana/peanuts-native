@@ -76,21 +76,40 @@ jobs:
         run: |
           NX_GAMES=$(tr '\n' ',' < peanuts/release-titles.txt | sed 's/,$//')
           NX_VERSION=$(tr -d '[:space:]' < peanuts/VERSION)
-          RELEASE_FLAGS=()
+          export NX_SIGN_STORE="$RUNNER_TEMP/release.jks"
+          USE_GENERATED_KEY=1
           if [ -n "$NX_SIGN_STORE_BASE64" ] && [ -n "$NX_SIGN_ALIAS" ] && [ -n "$NX_SIGN_PASS" ]; then
-            echo "$NX_SIGN_STORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
-            export NX_SIGN_STORE="$RUNNER_TEMP/release.jks"
-            RELEASE_FLAGS=(-PnxRelease=true -PnxVersion="$NX_VERSION")
-          else
-            echo "::notice::Release signing secrets not set; building debug-signed APK"
+            printf '%s' "$NX_SIGN_STORE_BASE64" | tr -d '[:space:]' | base64 -d > "$NX_SIGN_STORE" || true
+            if KEYTOOL_OUT=$(keytool -list -keystore "$NX_SIGN_STORE" -storepass "$NX_SIGN_PASS" -alias "$NX_SIGN_ALIAS" 2>&1); then
+              echo "::notice::Using release keystore from GitHub Secrets"
+              USE_GENERATED_KEY=0
+            else
+              echo "::warning::Secret keystore check failed (${KEYTOOL_OUT//$'\n'/ }); falling back to generated release keystore"
+              rm -f "$NX_SIGN_STORE"
+            fi
+          fi
+          if [ "$USE_GENERATED_KEY" -eq 1 ]; then
+            echo "::notice::Generating release keystore"
+            export NX_SIGN_ALIAS="peanuts"
+            export NX_SIGN_PASS="peanutsnative123"
+            keytool -genkeypair -v \
+              -keystore "$NX_SIGN_STORE" \
+              -storetype PKCS12 \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -alias "$NX_SIGN_ALIAS" \
+              -storepass "$NX_SIGN_PASS" \
+              -dname "CN=Peanuts Native, OU=Android, O=Peanuts, L=City, S=State, C=US"
           fi
           cd android/app
           ./gradlew apk \
             -PnxApp=peanuts \
+            -PnxAppId=peanutsx \
             -PnxLabel="Peanuts Native" \
+            -PnxRelease=true \
+            -PnxRequireSeeds=false \
+            -PnxVersion="$NX_VERSION" \
             -PnxGames="$NX_GAMES" \
-            -PnxPackStage="$RUNNER_TEMP/nxpack-work/stage" \
-            "${RELEASE_FLAGS[@]}"
+            -PnxPackStage="$RUNNER_TEMP/nxpack-work/stage"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7

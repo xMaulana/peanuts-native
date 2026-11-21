@@ -591,8 +591,9 @@ if (nxGenericHost) {
             def seed = seedDir ? new File(seedDir, "${title}.seed") : new File(repo, "dm/games/$title/vk_prewarm.bin")
             [(title): seed]
         }
+        def nxRequireSeeds = providers.gradleProperty('nxRequireSeeds').getOrElse('true') == 'true'   // PEANUTS: allow CI/fork release builds without private PN_PREWARM_SEEDS
         inputs.file(manifest)
-        inputs.property('requireReleaseSeeds', nxRelease || !seedDir.isEmpty())
+        inputs.property('requireReleaseSeeds', nxRequireSeeds && (nxRelease || !seedDir.isEmpty()))   // PEANUTS: nxRequireSeeds
         inputs.files(releaseSeeds.values().findAll { it.isFile() })
         outputs.dir(genDir)
         doLast {
@@ -617,7 +618,7 @@ if (nxGenericHost) {
                     def digest = java.security.MessageDigest.getInstance('SHA-256').digest(bytes).encodeHex().toString()
                     if (digest != expectedSeeds[g]) throw new GradleException("Prewarm seed for $g has SHA-256 $digest, expected ${expectedSeeds[g]}")
                     output.bytes = bytes
-                } else if (seed != null && (nxRelease || seedDir)) {
+                } else if (seed != null && nxRequireSeeds && (nxRelease || seedDir)) {   // PEANUTS: nxRequireSeeds
                     throw new GradleException("Missing release prewarm seed for $g. Set PN_PREWARM_SEEDS to the folder containing ${g}.seed")
                 } else {
                     run(['seed', g, output.path])
