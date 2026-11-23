@@ -9,8 +9,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../tools'))
 from romfs import open
 from pathlib import Path
 
+# PEANUTS begin: optional native Rust CRILAYLA / @UTF unmask acceleration (dm/peanuts/rust_pack)
+_pn_pack = None
+if os.environ.get('PN_NO_RUST') != '1':
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../peanuts/rust_pack'))
+        import pn_pack as _pn_mod
+        if _pn_mod.available(): _pn_pack = _pn_mod
+    except Exception:
+        _pn_pack = None
+# PEANUTS end
+
 def unmask(b):
     """An @UTF table stored masked (Unicorn Overlord's CPKs): each byte XOR the low byte of a 16-bit value that starts at 0x655f and is multiplied by 0x4115 after every byte"""
+    if _pn_pack is not None: return _pn_pack.cpk_unmask(bytes(b))   # PEANUTS: native Rust unmask
     out, m = bytearray(len(b)), 0x655f
     for i, x in enumerate(b): out[i] = x ^ (m & 0xff); m = m * 0x4115 & 0xffff
     return bytes(out)
@@ -81,6 +93,7 @@ def crilayla(c):
     fields (2, 3, 5 bits, then 8 bits while all ones; +3), or a 0 bit and a literal byte. The bits are read from a string of '0' / '1' (twice as fast as shifting in Python: 29 MB/s on
     Bayonetta 2's shader.dat)"""
     if c[:8] != b'CRILAYLA': raise ValueError('not CRILAYLA')
+    if _pn_pack is not None: return _pn_pack.crilayla_decompress(bytes(c))   # PEANUTS: native Rust CRILAYLA (avoids 8x bit-string RAM spike on Android)
     usz, csz = struct.unpack_from('<II', c, 8)
     out = bytearray(usz + 0x100)
     out[:0x100] = c[0x10 + csz:0x10 + csz + 0x100]
@@ -108,8 +121,11 @@ def crilayla(c):
 
 def read(path, ent):
     nm, off, csz, usz = ent
-    with open(path, 'rb') as f:
-        f.seek(off); c = f.read(csz)
+    if hasattr(path, 'seek'):   # PEANUTS: reuse an open CPK stream across entries (avoids O(N^2) zstd re-decompression in .nup)
+        path.seek(off); c = path.read(csz)
+    else:
+        with open(path, 'rb') as f:
+            f.seek(off); c = f.read(csz)
     if csz != usz or c[:8] == b'CRILAYLA':
         c = crilayla(c)
     if len(c) != usz: raise ValueError(f'{path}#{nm}: {len(c)} bytes, the TOC says {usz}')

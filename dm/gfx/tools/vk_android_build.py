@@ -41,6 +41,15 @@ from typing import Any   # PEANUTS(upstream-candidate): borrowed functions join 
 HERE = os.path.dirname(os.path.abspath(__file__)); GFX = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import dmsh_chain, dmsh_abi as abi, dmsh_ampere, split_pool, tool_lock, vk_android_spv as spv, vk_android_delta as delta
+# PEANUTS begin: optional Rust acceleration (libpn_pack.so)
+sys.path.insert(0, os.path.join(HERE, '../../peanuts/rust_pack'))
+try: import pn_pack as _pn_pack
+except Exception as _e: _pn_pack = None; _pn_err = str(_e)
+else: _pn_err = None
+if _pn_pack is not None and not _pn_pack.available(): _pn_pack = None; _pn_err = 'libpn_pack.so not loaded'
+if __name__ == '__main__':
+    print(f'pn_pack: {"active (ABI " + str(_pn_pack.EXPECTED_ABI) + ")" if _pn_pack is not None else "fallback (" + (_pn_err or "unavailable") + ")"}', flush=True)
+# PEANUTS end
 
 try: from compression import zstd   # Python 3.14; before it, pip install backports.zstd (shader_split.py needs it too)
 except ImportError:
@@ -213,7 +222,7 @@ def borrow_key(key_skip):
     consts: list[ast.stmt] = [n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, (ast.Name, ast.Tuple)) and
               {e.id for e in (t.elts if isinstance(t, ast.Tuple) else [t]) if isinstance(e, ast.Name)} & set(KEY_CONSTS) for t in n.targets)]
     if len(fns) != len(KEY_FNS): sys.exit(f'[RED] {SPLIT} no longer defines {", ".join(sorted(set(KEY_FNS) - set(fns)))}: vk_android_build.py takes them from there')
-    ns = {'struct': struct, 'hashlib': hashlib, 'KEY_SKIP': key_skip}
+    ns = {'struct': struct, 'hashlib': hashlib, 'KEY_SKIP': key_skip, '_pn_pack': _pn_pack}   # PEANUTS: native Rust skey
     exec(compile(ast.Module(body=consts + [fns[n] for n in KEY_FNS], type_ignores=[]), SPLIT, 'exec'), ns)
     return ns['skey']
 
@@ -711,7 +720,11 @@ ZSTD_LEVEL = int(os.environ.get('DMSH_VK_ZSTD_LEVEL', ZSTD_LEVEL))
 
 def pack_module(data):
     """(bytes to store, codec): one zstd frame when that is smaller, else the words as they are"""
-    if zstd is None or os.environ.get('DMSH_VK_RAW') == '1': return data, VK['CODEC_RAW']
+    if os.environ.get('DMSH_VK_RAW') == '1': return data, VK['CODEC_RAW']
+    if _pn_pack is not None:   # PEANUTS: native Rust zstd compression
+        c = _pn_pack.zstd_compress(data, ZSTD_LEVEL)
+        if c: return (c, VK['CODEC_ZSTD']) if len(c) < len(data) else (data, VK['CODEC_RAW'])
+    if zstd is None: return data, VK['CODEC_RAW']
     c = zstd.compress(data, level=ZSTD_LEVEL)
     return (c, VK['CODEC_ZSTD']) if len(c) < len(data) else (data, VK['CODEC_RAW'])
 

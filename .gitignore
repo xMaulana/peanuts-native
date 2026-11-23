@@ -23,3 +23,7 @@ STUTTER-TEST*.md
 
 # Code editor 
 .vscode
+
+# Rust on-device packer build artifacts
+dm/peanuts/rust_pack/target/
+
