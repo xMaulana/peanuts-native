@@ -500,7 +500,7 @@ if (nxPackEngine == 'native') {
     }
     def jni = tasks.register('nxPackJni', Sync) {
         dependsOn xlateCheck
-        from(new File(stage, 'lib')) { include 'libpython3.14.so', 'libnxpack.so', 'libzbicdec.so', 'libcra.so', 'libdmsh_xlate.so', 'libSPIRV-Tools-shared.so' }
+        from(new File(stage, 'lib')) { include 'libpython3.14.so', 'libnxpack.so', 'libzbicdec.so', 'libcra.so', 'libdmsh_xlate.so', 'libSPIRV-Tools-shared.so', 'libpn_pack.so' }   // PEANUTS: libpn_pack.so
         into nxPack.map { it.dir('jni/arm64-v8a') }
     }
     def pyZip = tasks.register('nxPackPython', Zip) {
@@ -518,6 +518,7 @@ if (nxPackEngine == 'native') {
             include 'scripts/*.py', 'dm/tools/*.py', 'dm/games/*.py', 'dm/gfx/nvn/*.h'
             include 'dm/peanuts/profile/mod_memory.tsv'   // PEANUTS: a modded variant's memory numbers, read by gen_runtime_profile.py
             include 'dm/peanuts/profile/gen_runtime_profile.py'   // PEANUTS: a build with a code mod that adds a module writes its own profile.bin with it (pack_android.py --modules); without the file every such build stopped at "Rewriting the game's code"
+            include 'dm/peanuts/rust_pack/pn_pack.py'   // PEANUTS: ctypes wrapper for libpn_pack.so
             include 'dm/tools/rewriter_equiv/*'   // earlier rewriter files of identical output: their pack keys still count (pack_android.py EQUIV, RewriteKey)
             nxGames.each { include "dm/games/$it/**" }   // the profile of each game the APK runs
             // PEANUTS: the phone packer needs neither the development notes nor the host's prewarm seeds (assets/profiles or compiled into the host).

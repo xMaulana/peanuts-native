@@ -87,6 +87,13 @@ import nup
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../games')); import game as _game
 from profile_guess import glsl_sources
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import uepak
+# PEANUTS begin: optional Rust acceleration (libpn_pack.so)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../peanuts/rust_pack'))
+try: import pn_pack as _pn_pack
+except Exception as _e: _pn_pack = None; _pn_err = str(_e)
+else: _pn_err = None
+if _pn_pack is not None and not _pn_pack.available(): _pn_pack = None; _pn_err = 'libpn_pack.so not loaded'
+# PEANUTS end
 GAME = _game.load()   # the current game profile (DM_GAME, required): source group rules and the table header note
 GROUPS, NOTE = GAME.pairs('shader_groups'), GAME.get('shader_note')
 KEY_SKIP = tuple(int(x, 0) for x in GAME.get('shader_key_skip', '0+0').split('+'))   # control bytes the keys hash as zeros (key_ctl); dm/games/game.py checks the form
@@ -155,6 +162,8 @@ def key_ctl(ctl):
     return c[:KEY_SKIP[0]] + bytes(KEY_SKIP[1]) + c[KEY_SKIP[0] + KEY_SKIP[1]:] if KEY_SKIP[1] and KEY_SKIP[0] + KEY_SKIP[1] <= len(c) else c
 
 def skey(ctl, code):
+    if _pn_pack is not None:   # PEANUTS: native Rust SHA-256 skey
+        return _pn_pack.skey(bytes(ctl), bytes(code), KEY_SKIP[0], KEY_SKIP[1])
     return hashlib.sha256(key_ctl(ctl) + code).hexdigest()[:16]
 
 def same_shader(a, b):
@@ -1177,11 +1186,18 @@ def cpk_map_entries(files):
 def cpk_shaders(path, rel, ents, out):
     """A range of CPK entries (cpk_jobs), each decoded (CRILAYLA or stored) and scanned like a loose file"""
     import cpk
-    for e in ents:
-        try: d = cpk.read(path, e)
-        except (ValueError, IndexError) as x:   # a compression cpk.py does not decode: the entry is left out, and the split goes on
-            print(f'[RED] /{rel}/{e[0]}: {x}; not scanned', flush=True); continue
-        scan_blob(d, f'/{rel}/{e[0]}', out)
+    # PEANUTS begin: read entries in ascending file-offset order through one open stream so zstd-backed .nup files never rewind to offset 0, then merge in TOC order
+    by_idx = {}
+    with open(path, 'rb') as f:
+        for i, e in sorted(enumerate(ents), key=lambda ie: ie[1][1]):
+            try: d = cpk.read(f, e)
+            except (ValueError, IndexError) as x:   # a compression cpk.py does not decode: the entry is left out, and the split goes on
+                print(f'[RED] /{rel}/{e[0]}: {x}; not scanned', flush=True); continue
+            found = []
+            scan_blob(d, f'/{rel}/{e[0]}', found)
+            if found: by_idx[i] = found
+    for i in sorted(by_idx): out.extend(by_idx[i])
+    # PEANUTS end
 
 # PEANUTS begin: Media.Vision's MVGL archives in their 64-bit layout (Digimon Story Time Stranger, 010062E01FE0C000: 176,835 entries in app_0.nx64.mvgl, 6.2 GB; mvgl.py).
 # Read whole, the 6.2 GB archive failed on macOS (one read() of more than 2 GB: OSError EINVAL) and gave no shader. Its shaders are the archive's 'shad' entries (the archive's own type
@@ -2984,6 +3000,9 @@ def ungzip(d, label):
 def yaz0(s, label='Yaz0'):
     """Yaz0 decompression (Super Mario 3D World + Bowser's Fury: almost all of RomFS is .szs = SARC wrapped in Yaz0). Pure Python runs at about 20–45 MB/s per core, under a minute for the whole 4.7 GB RomFS in parallel, and needs no extra dependency.
     Group header bits: 1 = one literal byte; 0 = back-reference, 2 bytes {length high nibble, 12-bit distance} (distance + 1); length 0 reads one more byte + 0x12, else + 2. Overlapping copies are expanded by their period"""
+    if _pn_pack is not None:   # PEANUTS: native Rust Yaz0 decompression
+        try: return _pn_pack.yaz0_decompress(bytes(s))
+        except ValueError: pass
     n = int.from_bytes(s[4:8], 'big'); out = bytearray(); si = 16
     try:
         while len(out) < n:
@@ -4563,6 +4582,7 @@ def write_outputs(t, pkg, mapout, factsout, pairsout, psopairsout):
     print(t['summary'] + (f'; variation pairs {t["npairs"]}' if pairsout else ''))
 
 if __name__ == '__main__':
+    print(f'pn_pack: {"active (ABI " + str(_pn_pack.EXPECTED_ABI) + ")" if _pn_pack is not None else "fallback (" + (_pn_err or "unavailable") + ")"}', flush=True)   # PEANUTS: confirm native Rust acceleration in build logs
     import nso
     try: main()
     except nso.Error as e: red(str(e))   # a damaged code module
