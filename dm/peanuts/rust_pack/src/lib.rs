@@ -1,16 +1,18 @@
 //! Native Rust acceleration library (`libpn_pack.so`) for on-device
 //! shader splitting and SPIR-V post-processing on Android.
 
+pub mod split;
 pub mod spv;
 
-use std::ffi::c_void;
+use std::ffi::{c_char, c_void, CStr};
+use std::path::Path;
 use std::ptr;
 use std::slice;
 
 use spv::SpvModule;
 
 /// ABI version returned by `pn_pack_abi_version`.
-pub const PN_PACK_ABI_VERSION: u32 = 2;
+pub const PN_PACK_ABI_VERSION: u32 = 3;
 
 #[no_mangle]
 pub extern "C" fn pn_pack_abi_version() -> u32 {
@@ -226,5 +228,92 @@ pub unsafe extern "C" fn pn_spv_set_binding(
     if !handle.is_null() {
         let m = &mut *(handle as *mut SpvModule);
         m.set_binding(vid, set, binding);
+    }
+}
+
+/// Computes the 16-hex-char shader key (`skey`) into `out_hex[..16]`. Returns 0 on success.
+#[no_mangle]
+pub unsafe extern "C" fn pn_split_skey(
+    ctl: *const u8,
+    ctl_len_v: usize,
+    code: *const u8,
+    code_len_v: usize,
+    skip_off: usize,
+    skip_len: usize,
+    out_hex: *mut u8,
+) -> i32 {
+    if ctl.is_null() || code.is_null() || out_hex.is_null() {
+        return -1;
+    }
+    let ctl_s = slice::from_raw_parts(ctl, ctl_len_v);
+    let code_s = slice::from_raw_parts(code, code_len_v);
+    let key = split::skey(ctl_s, code_s, (skip_off, skip_len));
+    let hex = split::skey_hex(&key);
+    ptr::copy_nonoverlapping(hex.as_ptr(), out_hex, 16);
+    0
+}
+
+/// Decompresses a Yaz0 buffer into a `PnBuf`.
+#[no_mangle]
+pub unsafe extern "C" fn pn_split_yaz0(data: *const u8, len: usize) -> PnBuf {
+    if data.is_null() {
+        return PnBuf {
+            ptr: ptr::null_mut(),
+            len: 0,
+            cap: 0,
+        };
+    }
+    let src = slice::from_raw_parts(data, len);
+    match split::yaz0_decompress(src) {
+        Ok(v) => PnBuf::from_vec(v),
+        Err(_) => PnBuf {
+            ptr: ptr::null_mut(),
+            len: 0,
+            cap: 0,
+        },
+    }
+}
+
+/// Scans `n_files` pairs of `(abs_path, rel_label)` in parallel with `memmap2` + `rayon`
+/// and streams deduplicated `BTCDBTCD` package records to `out_dir`.
+/// Writes `(unique_count, total_count)` to `out_unique` / `out_total` if non-null.
+/// Returns 0 on success, -1 on error.
+#[no_mangle]
+pub unsafe extern "C" fn pn_split_scan_files(
+    abs_paths: *const *const c_char,
+    rel_labels: *const *const c_char,
+    n_files: usize,
+    out_dir: *const c_char,
+    skip_off: usize,
+    skip_len: usize,
+    out_unique: *mut usize,
+    out_total: *mut usize,
+) -> i32 {
+    if abs_paths.is_null() || rel_labels.is_null() || out_dir.is_null() {
+        return -1;
+    }
+    let abs_slice = slice::from_raw_parts(abs_paths, n_files);
+    let rel_slice = slice::from_raw_parts(rel_labels, n_files);
+    let mut pairs = Vec::with_capacity(n_files);
+    for i in 0..n_files {
+        if abs_slice[i].is_null() || rel_slice[i].is_null() {
+            return -1;
+        }
+        let a = CStr::from_ptr(abs_slice[i]).to_string_lossy().into_owned();
+        let r = CStr::from_ptr(rel_slice[i]).to_string_lossy().into_owned();
+        pairs.push((a, r));
+    }
+    let out_path = Path::new(CStr::from_ptr(out_dir).to_str().unwrap_or(""));
+    match split::scan_files_parallel(&pairs, out_path, (skip_off, skip_len)) {
+        Ok((u, t)) => {
+            if !out_unique.is_null() {
+                *out_unique = u;
+            }
+            if !out_total.is_null() {
+                *out_total = t;
+            }
+            0
+        }
+        Err(_) => -1,
     }
 }

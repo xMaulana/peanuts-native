@@ -7,7 +7,7 @@ import ctypes
 import os
 import sys
 
-EXPECTED_ABI = 2
+EXPECTED_ABI = 3
 
 
 class PnBuf(ctypes.Structure):
@@ -65,6 +65,26 @@ def _load():
         lib.pn_spv_dual_source.restype = ctypes.c_int32
         lib.pn_spv_set_binding.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32]
         lib.pn_spv_set_binding.restype = None
+        lib.pn_split_skey.argtypes = [
+            ctypes.c_char_p, ctypes.c_size_t,
+            ctypes.c_char_p, ctypes.c_size_t,
+            ctypes.c_size_t, ctypes.c_size_t,
+            ctypes.c_char_p,
+        ]
+        lib.pn_split_skey.restype = ctypes.c_int32
+        lib.pn_split_yaz0.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
+        lib.pn_split_yaz0.restype = PnBuf
+        lib.pn_split_scan_files.argtypes = [
+            ctypes.POINTER(ctypes.c_char_p),
+            ctypes.POINTER(ctypes.c_char_p),
+            ctypes.c_size_t,
+            ctypes.c_char_p,
+            ctypes.c_size_t,
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t),
+            ctypes.POINTER(ctypes.c_size_t),
+        ]
+        lib.pn_split_scan_files.restype = ctypes.c_int32
         return lib
     return None
 
