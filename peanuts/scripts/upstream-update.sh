@@ -21,6 +21,10 @@ if [ "${1:-}" = "--check" ]; then
 fi
 target="${1:-upstream/android}"
 branch="$(git branch --show-current)"
+if [ -z "$branch" ]; then   # a detached HEAD: --check reads HEAD itself; a rebase needs a branch to move
+    [ "$mode" = "check" ] || { echo "detached HEAD: check out the branch to rebase first"; exit 1; }
+    branch="HEAD"
+fi
 allowlist="peanuts/upstream-unmarked.txt"
 
 if [ "$mode" = "rebase" ]; then git fetch -q upstream --tags; fi

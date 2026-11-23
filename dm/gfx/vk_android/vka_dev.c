@@ -146,7 +146,8 @@ static int init_once(void) {
         for (uint32_t i = 0; i < nl; i++) if (!strcmp(lp[i].layerName, layer)) nlayer = 1;
         free(lp); VLOG("DM_VK_VALIDATE: validation layer %s", nlayer ? "on" : "not installed");
     }
-    VkApplicationInfo ai = {VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "nxnative", .pEngineName = "nxnative", .apiVersion = VK_API_VERSION_1_3};
+    VkApplicationInfo ai = {VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "nxnative", .pEngineName = "nxnative",   // PEANUTS: bounded draw ranges
+        .apiVersion = api >= VK_API_VERSION_1_4 ? VK_API_VERSION_1_4 : VK_API_VERSION_1_3};
     VkInstanceCreateInfo ici = {VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &ai, .enabledExtensionCount = niext, .ppEnabledExtensionNames = iext,
                                 .enabledLayerCount = nlayer, .ppEnabledLayerNames = &layer};
     VkResult r = vk.vkCreateInstance(&ici, NULL, &V.inst);
@@ -190,6 +191,9 @@ static int init_once(void) {
     if (V.display_timing) dext[ndext++] = VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME;
     // The draw path (vka_draw.c): each one optional, with a fallback when absent
     int x_push = has_ext(de, nde, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME), x_vin = has_ext(de, nde, VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
+    int core_m5 = ai.apiVersion >= VK_API_VERSION_1_4 && V.props.apiVersion >= VK_API_VERSION_1_4;   // PEANUTS: bounded draw ranges
+    int x_m5 = !core_m5 && has_ext(de, nde, VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
+    if (x_m5) dext[ndext++] = VK_KHR_MAINTENANCE_5_EXTENSION_NAME;
     const char *x_rob = has_ext(de, nde, VK_KHR_ROBUSTNESS_2_EXTENSION_NAME) ? VK_KHR_ROBUSTNESS_2_EXTENSION_NAME : has_ext(de, nde, VK_EXT_ROBUSTNESS_2_EXTENSION_NAME) ? VK_EXT_ROBUSTNESS_2_EXTENSION_NAME : NULL;
     const char *x_i8 = has_ext(de, nde, VK_KHR_INDEX_TYPE_UINT8_EXTENSION_NAME) ? VK_KHR_INDEX_TYPE_UINT8_EXTENSION_NAME : has_ext(de, nde, VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME) ? VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME : NULL;
     const char *x_div = has_ext(de, nde, VK_KHR_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME) ? VK_KHR_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME : has_ext(de, nde, VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME) ? VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME : NULL;
@@ -222,12 +226,20 @@ static int init_once(void) {
     const char *xfb_env = getenv("DM_VK_XFB");
     int x_xfb = has_ext(de, nde, VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME) && !(xfb_env && !strcmp(xfb_env, "0"));
     if (x_xfb) dext[ndext++] = VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME;
+    // PEANUTS: VK_EXT_attachment_feedback_loop_layout + _dynamic_state: a draw that samples a level its own pass draws into (Breath of the Wild's decals read the G-buffer
+    // they write) says so through vkCmdSetAttachmentFeedbackLoopEnableEXT (vka_draw.c), and a tiling driver (Turnip) then renders that pass in system memory, where the reads
+    // see the pass's own writes: in tile memory they read what the image held before the pass. DM_VK_FB_LOOP=0 (restart) leaves both off
+    const char *fbl_env = getenv("DM_VK_FB_LOOP");
+    int x_fbl = has_ext(de, nde, VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME) && has_ext(de, nde, VK_EXT_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_EXTENSION_NAME) &&
+                !(fbl_env && !strcmp(fbl_env, "0"));
+    if (x_fbl) { dext[ndext++] = VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME; dext[ndext++] = VK_EXT_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_EXTENSION_NAME; }
     V.mem_budget = has_ext(de, nde, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);   // the image heap's budget, for the texture cache's limit (vka_tex.c img_limit_update)
     if (V.mem_budget) dext[ndext++] = VK_EXT_MEMORY_BUDGET_EXTENSION_NAME;
     free(de);
 
     // Every feature the device has, but robustness and capture-replay (they cost and nothing needs them); the shader side takes what it needs from the same device
     VkPhysicalDeviceMapMemoryPlacedFeaturesEXT fmp = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAP_MEMORY_PLACED_FEATURES_EXT};
+    VkPhysicalDeviceMaintenance5Features fm5 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES};   // PEANUTS: bounded draw ranges
     VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT fvin = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT};
     VkPhysicalDeviceRobustness2FeaturesKHR frob = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_KHR};
     VkPhysicalDeviceIndexTypeUint8Features fi8 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES};
@@ -236,11 +248,15 @@ static int init_once(void) {
     VkPhysicalDeviceMeshShaderFeaturesEXT fmesh = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT};
     VkPhysicalDeviceFaultFeaturesEXT ffault = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT};
     VkPhysicalDeviceTransformFeedbackFeaturesEXT fxfb = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_FEATURES_EXT};   // PEANUTS: transform feedback (vka_tf.c)
+    VkPhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT ffbl = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_FEATURES_EXT};   // PEANUTS: feedback loops
+    VkPhysicalDeviceAttachmentFeedbackLoopDynamicStateFeaturesEXT ffbd = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_FEATURES_EXT};
     void *chain = placed ? &fmp : NULL;
 #define LINK(on, st) if (on) { (st).pNext = chain; chain = &(st); }
     struct { VkStructureType sType; void *pNext; VkBool32 queuePerfHint; } fph = {(VkStructureType)1000302001};   // VkPhysicalDeviceQueuePerfHintFeaturesQCOM (not in the NDK's headers yet)
     LINK(x_vin, fvin) LINK(x_rob, frob) LINK(x_i8, fi8) LINK(x_div, fdiv) LINK(x_ph, fph) LINK(x_gpl, fgpl) LINK(x_mesh, fmesh) LINK(x_fault, ffault)
+    LINK(core_m5 || x_m5, fm5)   // PEANUTS: bounded draw ranges
     LINK(x_xfb, fxfb)   // PEANUTS: transform feedback (vka_tf.c)
+    LINK(x_fbl, ffbl) LINK(x_fbl, ffbd)   // PEANUTS: feedback loops (vka_draw.c)
 #undef LINK
     VkPhysicalDeviceVulkan13Features f13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, .pNext = chain};
     VkPhysicalDeviceVulkan12Features f12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, .pNext = &f13};
@@ -260,6 +276,7 @@ static int init_once(void) {
     V.multi_vp = f2.features.multiViewport; V.a2c = 1; V.vstores = f2.features.vertexPipelineStoresAndAtomics; V.fstores = f2.features.fragmentStoresAndAtomics; V.mesh = x_mesh && fmesh.meshShader; V.task = V.mesh && fmesh.taskShader;
     if (!f12.timelineSemaphore || !f13.dynamicRendering) { VRED("the device lacks timeline semaphores (%d) or dynamic rendering (%d)", f12.timelineSemaphore, f13.dynamicRendering); return 0; }
     fxfb.geometryStreams = VK_FALSE; V.xfb = x_xfb && fxfb.transformFeedback;   // PEANUTS: transform feedback (vka_tf.c): captures of stream 0 only
+    V.fb_loop = x_fbl && ffbl.attachmentFeedbackLoopLayout && ffbd.attachmentFeedbackLoopDynamicState;   // PEANUTS: feedback loops (vka_draw.c)
     V.imageless = f12.imagelessFramebuffer;   // (enabled with the rest of f12)
     V.draw_count = f12.drawIndirectCount;
     V.minmax = f12.samplerFilterMinmax;   // (enabled with the rest of f12)
@@ -273,7 +290,13 @@ static int init_once(void) {
 #define D(f) vk.f = (PFN_##f)vk.vkGetDeviceProcAddr(V.dev, #f);
     VKA_DEVICE_FNS(D)
 #undef D
+    if (!fm5.maintenance5) vk.vkCmdBindIndexBuffer2KHR = NULL;   // PEANUTS: bounded draw ranges
+    else if (core_m5) vk.vkCmdBindIndexBuffer2KHR = (PFN_vkCmdBindIndexBuffer2KHR)vk.vkGetDeviceProcAddr(V.dev, "vkCmdBindIndexBuffer2");
+    VLOG("bounded index buffer bindings: %s", vk.vkCmdBindIndexBuffer2KHR ? (core_m5 ? "core 1.4" : "KHR_maintenance5") : "unavailable");
     if (V.xfb && !(vk.vkCmdBindTransformFeedbackBuffersEXT && vk.vkCmdBeginTransformFeedbackEXT && vk.vkCmdEndTransformFeedbackEXT)) V.xfb = 0;   // PEANUTS: transform feedback (vka_tf.c)
+    if (V.fb_loop && !vk.vkCmdSetAttachmentFeedbackLoopEnableEXT) V.fb_loop = 0;   // PEANUTS: feedback loops
+    VLOG("attachment feedback loops (VK_EXT_attachment_feedback_loop_layout + _dynamic_state): %s", V.fb_loop ? "on: a draw sampling its own attachment says so (DM_VK_FB_LOOP=0: off)" :
+         x_fbl ? "extensions without the features" : fbl_env && !strcmp(fbl_env, "0") ? "off (DM_VK_FB_LOOP=0)" : "not on this device");
     fp_wrap_compiles();
     vka_shader_pfb_hook();   // (over the FPCR wrapper: the module it makes is the rewritten one)
     if (!vk.vkMapMemory2KHR) vk.vkMapMemory2KHR = (PFN_vkMapMemory2KHR)vk.vkGetDeviceProcAddr(V.dev, "vkMapMemory2");   // core in 1.4
@@ -338,6 +361,7 @@ static int init_once(void) {
          p11.subgroupSupportedStages & VK_SHADER_STAGE_GEOMETRY_BIT ? "yes" : "NO", p11.subgroupSupportedStages & VK_SHADER_STAGE_FRAGMENT_BIT ? "yes" : "NO", p11.subgroupSupportedStages & VK_SHADER_STAGE_VERTEX_BIT ? "yes" : "NO",
          p11.subgroupSupportedOperations, p11.subgroupQuadOperationsInAllStages ? "yes" : "no", p13.requiredSubgroupSizeStages);
     V.subgroup_stages = p11.subgroupSupportedStages;
+    V.subgroup_quad = !!(p11.subgroupSupportedOperations & VK_SUBGROUP_FEATURE_QUAD_BIT);   // PEANUTS: vka_shader.c quad_shfl
     V.cache_ctl = f13.pipelineCreationCacheControl;
     V.subgroup_req_stages = f13.subgroupSizeControl ? p13.requiredSubgroupSizeStages : 0;
     V.subgroup_size = p11.subgroupSize; V.subgroup_min = p13.minSubgroupSize ? p13.minSubgroupSize : p11.subgroupSize; V.subgroup_max = p13.maxSubgroupSize ? p13.maxSubgroupSize : p11.subgroupSize;
@@ -917,6 +941,7 @@ static int sblk_idle(const sblk *b, uint64_t done, uint64_t udone) { return b->f
 static sblk *sblk_new(VkDeviceSize n) {
     sblk *b = calloc(1, sizeof *b); b->size = n;
     VkBufferCreateInfo bi = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = n, .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                                         VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |   // expanded indices and instance tables   // PEANUTS: bounded draw ranges
                                                                          VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT};   // indirect: the {count, 1, 1} copies of indirect mesh draws (vka_exec.c mdx_copy). PEANUTS: texel: the copy of a buffer texture (vka_draw.c tbuf_view)
     if (vk.vkCreateBuffer(V.dev, &bi, NULL, &b->buf)) { free(b); return NULL; }
     VkMemoryRequirements mr; vk.vkGetBufferMemoryRequirements(V.dev, b->buf, &mr);

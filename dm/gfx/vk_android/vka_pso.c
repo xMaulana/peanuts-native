@@ -165,6 +165,7 @@ static uint64_t g_probe_hit, g_probe_miss, g_probe_miss_ns;          // GPL: the
 static _Atomic uint64_t g_save_ns_total, g_hy_draws, g_pw_wait_ns;
 // PEANUTS: startup pipeline prewarm and its progress counters.
 static void pw_load(void); static void pw_start(int wait); static int pw_save(void);
+static void cw_start(void);   // PEANUTS: the compute warm-up (cw_main)
 static void pcl_open(void); static void pcl_save(int force); static void pp_prepare(void); static _Atomic int g_pcl_due;   // PEANUTS: the shader parts' cache and the preparing step (below)
 static int g_pw_startup;
 static _Atomic int g_pw_start_total = -1;   // -1 before the startup phase is decided
@@ -254,6 +255,7 @@ static void pc_open_once(void) {
     pthread_t th;
     if (!pthread_create(&th, NULL, saver_main, NULL)) { pthread_detach(th); g_sv_up = 1; }
     pw_start(g_pw_startup && !n && g_pc && g_pc_path[0]);   // PEANUTS: wait only for a cold cache that can be saved
+    cw_start();   // PEANUTS
 }
 static void pc_open(void) { static pthread_once_t once = PTHREAD_ONCE_INIT; pthread_once(&once, pc_open_once); }   // (the prewarm threads it starts call it too: they wait for it)
 // PEANUTS(upstream-candidate): fclose consumes the stream even on failure; close once before renaming, and retain the old file on any failure.
@@ -501,6 +503,7 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
     for (size_t i = 0; i < sizeof base / sizeof *base; i++)   // (a mesh pipeline may not name the primitive topology or restart: it has no input assembly)
         if (!mesh || (base[i] != VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY && base[i] != VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE)) P->dyn[nd++] = base[i];
     if (!k->vin_static && !mesh) P->dyn[nd++] = VK_DYNAMIC_STATE_VERTEX_INPUT_EXT;
+    if (V.fb_loop) P->dyn[nd++] = VK_DYNAMIC_STATE_ATTACHMENT_FEEDBACK_LOOP_ENABLE_EXT;   // PEANUTS: set at each draw (vka_draw.c: a draw sampling its own attachment)
     P->dy = (VkPipelineDynamicStateCreateInfo){VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO, .dynamicStateCount = nd, .pDynamicStates = P->dyn};
     for (int i = 0; i < k->ncolor; i++) P->cf[i] = (VkFormat)k->cfmt[i];
     P->ri = (VkPipelineRenderingCreateInfo){VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO, .colorAttachmentCount = k->ncolor, .pColorAttachmentFormats = P->cf,
@@ -554,7 +557,7 @@ static void heavy_add(uint64_t k, int save) {
     pthread_mutex_unlock(&g_heavy_mu);
 }
 static void heavy_load(void) {
-    if (!g_pc_path[0]) return;
+    static _Atomic int once; if (!g_pc_path[0] || atomic_exchange(&once, 1)) return;   // PEANUTS: once (pw_start and cw_main)
     pthread_mutex_lock(&g_heavy_mu); snprintf(g_heavy_path, sizeof g_heavy_path, "%s.heavy", g_pc_path); pthread_mutex_unlock(&g_heavy_mu);
     FILE *f = fopen(g_heavy_path, "r"); if (!f) return;
     char ln[64]; while (fgets(ln, sizeof ln, f)) { uint64_t k = strtoull(ln, NULL, 16); if (k) heavy_add(k, 0); }
@@ -742,7 +745,7 @@ static int dyn_part(VkDynamicState d) {
     case VK_DYNAMIC_STATE_VERTEX_INPUT_EXT: case VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY: case VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE: return L_VI;
     case VK_DYNAMIC_STATE_VIEWPORT: case VK_DYNAMIC_STATE_SCISSOR: case VK_DYNAMIC_STATE_LINE_WIDTH: case VK_DYNAMIC_STATE_DEPTH_BIAS: case VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE:
     case VK_DYNAMIC_STATE_CULL_MODE: case VK_DYNAMIC_STATE_FRONT_FACE: case VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE: return L_PRE;
-    case VK_DYNAMIC_STATE_BLEND_CONSTANTS: return L_FO;
+    case VK_DYNAMIC_STATE_BLEND_CONSTANTS: case VK_DYNAMIC_STATE_ATTACHMENT_FEEDBACK_LOOP_ENABLE_EXT: return L_FO;   // PEANUTS: feedback loops: fragment output state, as the feedback loop pipeline flags are
     default: return L_FS;   // depth and stencil tests, depth bounds
     }
 }
@@ -1253,7 +1256,7 @@ static void *pw_main(void *a) {
         }
         int made = 0;
         if (bad) { atomic_fetch_add(&g_pw_bad, 1); pw_mark_bad(offs[i]); }
-        else if (r.kind == VKA_PW_CS) { cs_obtain(sh[5], &lay, 1, &made, 0, 0, 0); }
+        else if (r.kind == VKA_PW_CS) { uint64_t m2[2] = {0, 0}; if (r.klen == 16) memcpy(m2, kb, 16); cs_obtain(sh[5], &lay, 1, &made, m2[0], m2[1], 0); }   // PEANUTS: the retyped variant's masks
         else {
             vka_gkey k; memset(&k, 0, sizeof k); memcpy(&k, kb, r.klen < sizeof k ? r.klen : sizeof k);
             if (k.vin_static != (uint32_t)!V.vin_dyn) {
@@ -1345,7 +1348,7 @@ static void busy_wait(gval *g) {
 // shaders do. A skipped draw is missing from that frame only, except where the game keeps what it drew (a texture drawn once and reused): that stays wrong until redrawn.
 // Mesh pipelines are still made on the frame path; compute pipelines go through the same queue (DM_VK_CS_ASYNC, cs_obtain). Open: the cause, slow library compiles on
 // Turnip, is not addressed. cs: a compute job (sh[5] its shader, g an entry of g_cs; len, k unused)
-typedef struct as_job { struct as_job *next; gval *g; size_t len; vka_shader *sh[VKA_NSTAGE]; vka_layout lay; vka_gkey k; uint64_t t0, cost; int cs; } as_job;
+typedef struct as_job { struct as_job *next; gval *g; size_t len; vka_shader *sh[VKA_NSTAGE]; vka_layout lay; vka_gkey k; uint64_t t0, cost; int cs; uint64_t um, sm; } as_job;   // PEANUTS: um, sm (a retyped compute variant)
 static as_job *g_as_head, **g_as_tail = &g_as_head; static pthread_mutex_t g_as_mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_as_cv = PTHREAD_COND_INITIALIZER;
 static _Atomic uint64_t g_as_queued, g_as_made, g_as_skips, g_as_ns, g_as_lat_max_ns; static _Atomic int g_as_depth, g_as_depth_max;
 // PEANUTS begin: whether the frame path's last lookup that returned no pipeline did so because a background thread is to make it, not because the driver refused it
@@ -1376,6 +1379,61 @@ static uint64_t as_cost(vka_shader *const sh[VKA_NSTAGE]) {
 }
 static void gfx_build(gval *g, size_t len, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, const vka_gkey *k, int prewarm, int async, uint64_t t_make);
 static void cs_build(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderModule csm, uint64_t umask, uint64_t smask, int prewarm, int async);
+// PEANUTS begin: the compute warm-up (2026-11-21, after nx2androidX's compute_warm, gfx_vk_exec_xfb.inc). A compute pipeline depends only on its shader and the layout
+// its bindings give, so every compute shader of the game's library can be made before the game first dispatches it, with no recording: a first dispatch otherwise made
+// it on the frame path (45-105 ms each on Adreno by nx2androidX's count, Ocarina of Time's 3d0d6d61bb9076e7 3.1 s) or, asynchronous, skipped the dispatch until it was
+// there. The prewarm list covers only what earlier runs met (none on a first run of a title without a seed). One thread at nice 10 through the gate after the frame's
+// compiles (gate_enter 0), cheapest first (as_cost), after the startup prewarm and the list's threads are done; shaders in the .heavy list (long on this driver before) and
+// retyped variants (integer images: their masks are known at the dispatch only; the prewarm list's klen 16 records hold those) are left out. A library with more than
+// DM_VK_CS_WARM_MAX (default 256) compute shaders is left alone: nx2androidX's Monster Hunter Rise (4096 or more) ran a phone out of GPU memory. DM_VK_CS_WARM: 1 on
+// Turnip, 0 elsewhere (measured on Turnip only; on Qualcomm's driver before 512.800 a pipeline also holds ~6 MB outside the process); 0 / 1 to choose
+typedef struct { vka_shader *sh; uint64_t cost; } cw_item;
+static int cw_cmp(const void *a, const void *b) { uint64_t x = ((const cw_item *)a)->cost, y = ((const cw_item *)b)->cost; return x < y ? -1 : x > y; }
+static void *cw_main(void *a) {
+    (void)a; pthread_setname_np(pthread_self(), "vk-cswarm"); vka_fp_host("vk-cswarm");
+    setpriority(PRIO_PROCESS, 0, 10);
+    while (atomic_load(&g_pw_running) > 0) usleep(200000);   // the prewarm list first (its compute records are what the game met; the startup wait is theirs)
+    int cap = VKA_ENV("DM_VK_CS_WARM_MAX", 256); if (cap < 1) return NULL;
+    uint64_t *keys = malloc((size_t)cap * sizeof *keys); cw_item *it = malloc((size_t)cap * sizeof *it);
+    int n = keys && it ? vka_shader_lib_stage_keys(DMSH_VK_STAGE_CS, keys, cap) : -1;
+    if (n > cap) { VLOG("compute warm-up: none, the library has %d compute shaders (more than DM_VK_CS_WARM_MAX=%d)", n, cap); n = -1; }
+    if (n <= 0) { free(keys); free(it); return NULL; }
+    heavy_load();
+    uint64_t t0 = now_ns(); int m = 0, made = 0, had = 0, heavy = 0, bad = 0;
+    for (int i = 0; i < n; i++) {
+        if (heavy_has(keys[i])) { heavy++; continue; }
+        vka_shader *sh = vka_shader_by_key(keys[i]); if (!sh) { bad++; continue; }
+        vka_shader *s7[VKA_NSTAGE] = {0}; s7[5] = sh;
+        it[m].sh = sh; it[m].cost = as_cost(s7); m++;
+    }
+    qsort(it, (size_t)m, sizeof *it, cw_cmp);
+    uint32_t mem_mb = (uint32_t)VKA_ENV("DM_VK_PREWARM_MEM_MB", 2048);
+    uint64_t stop_ms = (uint64_t)VKA_ENV("DM_VK_CS_WARM_STOP_MS", 1000); int stopped = 0;
+    for (int i = 0; i < m && !atomic_load(&g_pp_skip); i++) {
+        pause_point();
+        uint64_t av; while (mem_mb && (av = mem_avail_mb()) && av < mem_mb / 2) { usleep(250000); pause_point(); }   // (half the prewarm's threshold: one thread)
+        vka_shader *s7[VKA_NSTAGE] = {0}; s7[5] = it[i].sh; vka_layout lay;
+        if (!vka_layout_of(s7, 1, &lay)) { bad++; continue; }
+        int tok = gate_enter(0, 0); gate_hold(tok, it[i].sh->key);
+        int mk = 0; uint64_t tb = now_ns(); cs_obtain(it[i].sh, &lay, 1, &mk, 0, 0, 0);
+        gate_leave(tok);
+        if (mk) made++; else had++;
+        // Cheapest first, so one build past DM_VK_CS_WARM_STOP_MS (default 1000; 0 never) means the rest cost as much or more: stopped there. Hyrule Warriors: Age of
+        // Calamity's library has 241 compute shaders, and the warm-up took 17 s of the one background slot on Turnip, builds of 1.2-2.6 s among them, of shaders
+        // the game dispatches retyped (a variant of its own) or not at all; Super Mario Odyssey's 41 take 51-103 ms each (2026-11-21)
+        if (mk && stop_ms && now_ns() - tb > stop_ms * 1000000ull) { stopped = m - i - 1; break; }
+        setpriority(PRIO_PROCESS, 0, 10);   // (a waiting frame path may have raised it: busy_wait)
+    }
+    VLOG("compute warm-up: %d of the library's %d compute shaders made ahead in %.1f s (%d already there, %d left out as long on this driver, %d not made, %d left after a "
+         "build past DM_VK_CS_WARM_STOP_MS=%llu)", made, n, (now_ns() - t0) / 1e9, had, heavy, bad, stopped, (unsigned long long)stop_ms);
+    free(keys); free(it);
+    return NULL;
+}
+static void cw_start(void) {
+    if (!VKA_ENV("DM_VK_CS_WARM", V.driver_id == VK_DRIVER_ID_MESA_TURNIP)) return;   // PEANUTS: Turnip only by default (above)
+    pthread_t th; if (!pthread_create(&th, NULL, cw_main, NULL)) pthread_detach(th);
+}
+// PEANUTS end
 static void *as_main(void *a) {
     (void)a; pthread_setname_np(pthread_self(), "vk-psoasync"); vka_fp_host("vk-psoasync");
     setpriority(PRIO_PROCESS, 0, 10);   // under the game's threads, as the prewarm threads: no frame waits for these builds (their draws are skipped instead)
@@ -1398,7 +1456,7 @@ static void *as_main(void *a) {
         int tok = gate_enter(1, gate_heavy(pre, j->cs ? NULL : j->sh[1]));   // the frame's: its draws (dispatches) are skipped until it is made, so it goes before the speculative ones
         gate_hold(tok, key);
         uint64_t t0 = now_ns();
-        if (j->cs) cs_build(j->g, j->sh[5], &j->lay, vka_shader_cs_module(j->sh[5]), 0, 0, 0, 1);
+        if (j->cs) cs_build(j->g, j->sh[5], &j->lay, j->um | j->sm ? vka_shader_img_module(j->sh[5], j->um, j->sm) : vka_shader_cs_module(j->sh[5]), j->um, j->sm, 0, 1);   // PEANUTS: a retyped variant's module
         else gfx_build(j->g, j->len, j->sh, &j->lay, &j->k, 0, 1, j->t0);
         gate_leave(tok);
         setpriority(PRIO_PROCESS, 0, 10);   // PEANUTS: back under the game's threads if a waiting draw raised it (vka_gfx_pipeline_now)
@@ -1522,6 +1580,17 @@ static void *pl_slurp(const char *path, size_t *n) {
     return d;
 }
 // The shader parts' cache, the profile's pairs and the learned programs, read once (pc_open_once, after the pipelines' cache)
+// PEANUTS: the depth mode the profile's seed was made in (its graphics keys' gl_depth, the majority; 1 = near = 0), -1 without a seed or graphics keys. Before a first
+// start's stamp says it, the parts were prepared for near = -w and pf_main threw them away when the game set near = 0: 18 of the 24 seeds of 2026-11-21 are near = 0
+// (Hyrule Warriors: Age of Calamity: 3,441 programs prepared in 77 s for nothing, 1,182 compiled again in the session), Super Mario Odyssey's is near = -w
+static int prep_depth_seed(void) {
+    size_t o = 0; uint32_t n = 0; long zero = 0, gl = 0;
+    if (!dm_vk_prewarm_seed_len || vka_pw_header(dm_vk_prewarm_seed, dm_vk_prewarm_seed_len, &o, &n) != VKA_PW_OK) return -1;
+    pwrec r; const uint8_t *kb; int ok;
+    while (vka_pw_next(dm_vk_prewarm_seed, dm_vk_prewarm_seed_len, &o, &r, &kb, &ok))
+        if (ok && r.kind != VKA_PW_CS && r.klen > offsetof(vka_gkey, gl_depth)) { if (kb[offsetof(vka_gkey, gl_depth)]) gl++; else zero++; }
+    return zero + gl ? zero > gl : -1;
+}
 static void pcl_open(void) {
     if (!V.gpl) return;
     if (g_pc_path[0]) snprintf(g_pcl_path, sizeof g_pcl_path, "%s.parts", g_pc_path);
@@ -1562,6 +1631,11 @@ static void pcl_open(void) {
         else n = 0;   // another library's or another list's parts: started empty
     } else n = 0;
     free(st);
+    if (atomic_load(&g_prep_depth_zero) < 0) {   // PEANUTS: a first start: the depth mode from the profile's seed, so the parts are not prepared for the other one (prep_depth_seed)
+        int dz = VKA_ENV("DM_VK_PSO_PREP_DEPTH0", -1); const char *src = "DM_VK_PSO_PREP_DEPTH0";
+        if (dz < 0) { dz = prep_depth_seed(); src = "the profile's seed"; }
+        if (dz >= 0) { atomic_store(&g_prep_depth_zero, dz ? 1 : 0); VLOG("shader parts: prepared for depth mode %s (%s)", dz ? "near = 0" : "near = -w", src); }
+    }
     if (pdone > g_npairs) pdone = (uint32_t)g_npairs;
     if (ldone > g_nlearn) ldone = (uint32_t)g_nlearn;
     atomic_store(&g_pairs_done, pdone); atomic_store(&g_learn_done, ldone);
@@ -1981,14 +2055,58 @@ static kmap g_cs = {.klen = sizeof(ckey)};
 // shot: a 3.7 s frame mid-play). A skipped dispatch leaves its outputs as they were: a particle effect is missing or frozen for those frames; work the game keeps (a
 // buffer written once, indirect arguments) stays stale until dispatched again. Pipelines with retyped images (umask / smask) stay on the frame path (the base pipeline in
 // their place would read the integer texels as floats)
+// PEANUTS begin: the compute lane (DM_VK_CS_LANE, default 2 threads). A dispatch's compute pipeline made in the background goes to a queue of its own, built by one thread outside the
+// graphics gate, so one compute and the gate's graphics builds run at once. On Turnip the gate has one slot (vka_psogate.h): Hyrule Warriors: Age of Calamity's
+// retyped compute variants (1.5-2.4 s each, asynchronous since DM_VK_CS_ASYNC_RETYPE) held it while the draws' graphics pipelines queued behind them, 88,553 draws skipped
+// and one waiting 16.6 s in its first battle without a seed (2026-11-21). The lane waits while the phone has less than DM_VK_CS_LANE_MEM_MB (default 1024) available
+static as_job *g_cq_head; static pthread_mutex_t g_cq_mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_cq_cv = PTHREAD_COND_INITIALIZER;
+static void *cq_main(void *a) {
+    (void)a; pthread_setname_np(pthread_self(), "vk-cslane"); vka_fp_host("vk-cslane");
+    setpriority(PRIO_PROCESS, 0, 10);
+    uint32_t mem_mb = (uint32_t)VKA_ENV("DM_VK_CS_LANE_MEM_MB", 1024);
+    for (;;) {
+        pause_point();
+        pthread_mutex_lock(&g_cq_mu);
+        while (!g_cq_head) pthread_cond_wait(&g_cq_cv, &g_cq_mu);
+        as_job **pp = &g_cq_head; for (as_job **q = &g_cq_head; *q; q = &(*q)->next) if ((*q)->cost < (*pp)->cost) pp = q;   // the cheapest first
+        as_job *j = *pp; *pp = j->next;
+        pthread_mutex_unlock(&g_cq_mu);
+        uint64_t av; while (mem_mb && (av = mem_avail_mb()) && av < mem_mb) { usleep(100000); pause_point(); }
+        pthread_mutex_lock(&g_mu); j->g->tid = gettid(); pthread_mutex_unlock(&g_mu);
+        uint64_t t0 = now_ns();
+        cs_build(j->g, j->sh[5], &j->lay, j->um | j->sm ? vka_shader_img_module(j->sh[5], j->um, j->sm) : vka_shader_cs_module(j->sh[5]), j->um, j->sm, 0, 1);
+        setpriority(PRIO_PROCESS, 0, 10);
+        uint64_t t1 = now_ns(), lat = t1 - j->t0, cur = atomic_load(&g_as_lat_max_ns);
+        while (lat > cur && !atomic_compare_exchange_weak(&g_as_lat_max_ns, &cur, lat)) {}
+        atomic_fetch_add(&g_as_ns, t1 - t0); atomic_fetch_add(&g_as_made, 1); atomic_fetch_sub(&g_as_depth, 1);
+        free(j);
+    }
+    return NULL;
+}
+static int g_cq_up;
+// DM_VK_CS_LANE=<n>: the lane's threads (2 by default, at most 2; 0 = no lane, compute through the graphics queue as before). AoC without a seed: longest wait 15.4 s on one, 8.1-8.5 s on two
+static void cq_start(void) {
+    int n = VKA_ENV("DM_VK_CS_LANE", 2); n = n > 2 ? 2 : n;
+    for (int i = 0; i < n; i++) { pthread_t th; if (!pthread_create(&th, NULL, cq_main, NULL)) { pthread_detach(th); g_cq_up++; } }
+    if (!g_cq_up) VRED("compute lane: no thread; compute pipelines go through the graphics queue"); else VLOG("compute lane: %d thread%s beside the graphics gate (DM_VK_CS_LANE)", g_cq_up, g_cq_up > 1 ? "s" : "");
+}
+static int cq_on(void) { static int on = -1; if (on < 0) on = VKA_ENV("DM_VK_CS_LANE", 2) != 0; return on; }
+// PEANUTS end
 static int cs_async_on(void) { return VKA_ENV("DM_VK_CS_ASYNC", 1) && as_threads() > 0; }
-static void cs_queue(gval *g, vka_shader *cs, const vka_layout *lay) {
+static void cs_queue(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderModule csm, uint64_t um, uint64_t sm) {   // PEANUTS: csm, um, sm
     as_job *j = calloc(1, sizeof *j);
-    if (!j) { cs_build(g, cs, lay, vka_shader_cs_module(cs), 0, 0, 0, 0); return; }
-    j->g = g; j->sh[5] = cs; j->lay = *lay; j->t0 = now_ns(); j->cost = as_cost(j->sh); j->cs = 1;
+    if (!j) { cs_build(g, cs, lay, csm, um, sm, 0, 0); return; }
+    j->g = g; j->sh[5] = cs; j->lay = *lay; j->t0 = now_ns(); j->cost = as_cost(j->sh); j->cs = 1; j->um = um; j->sm = sm;
     int d = atomic_fetch_add(&g_as_depth, 1) + 1, m = atomic_load(&g_as_depth_max);
     while (d > m && !atomic_compare_exchange_weak(&g_as_depth_max, &m, d)) {}
     atomic_fetch_add(&g_as_queued, 1);
+    if (cq_on()) {   // PEANUTS: the compute lane
+        static pthread_once_t once = PTHREAD_ONCE_INIT; pthread_once(&once, cq_start);
+        if (g_cq_up) {
+        pthread_mutex_lock(&g_cq_mu); j->next = g_cq_head; g_cq_head = j; pthread_cond_signal(&g_cq_cv); pthread_mutex_unlock(&g_cq_mu);
+        return;
+        }
+    }
     pthread_mutex_lock(&g_as_mu); *g_as_tail = j; g_as_tail = &j->next; pthread_cond_signal(&g_as_cv); pthread_mutex_unlock(&g_as_mu);
 }
 static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, int *made, uint64_t umask, uint64_t smask, int frame) {
@@ -1998,7 +2116,10 @@ static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, 
     if (!csm) return VK_NULL_HANDLE;   // (a retyped module that cannot be made: the caller takes the base pipeline)
     ckey k; memset(&k, 0, sizeof k); k.cs = cs; k.layout = lay->layout; k.umask = umask; k.smask = smask;
     uint64_t h = fnv(&k, sizeof k, 1469598103934665603ull);
-    int async = frame && !prewarm && !(umask | smask) && cs_async_on();
+    // PEANUTS: a retyped variant too (DM_VK_CS_ASYNC_RETYPE, default 1): its dispatch is skipped while it is made (vka_draw.c img_retype answers no pipeline then, not the
+    // base one, which would read the integer texels as floats). Before 2026-11-21 it was made on the frame path: Hyrule Warriors: Age of Calamity's seven heavy compute
+    // shaders froze its first battle for 1.3-2.4 s each on a first launch without a seed
+    int async = frame && !prewarm && (!(umask | smask) || VKA_ENV("DM_VK_CS_ASYNC_RETYPE", 1)) && cs_async_on();
     pthread_mutex_lock(&g_mu);
     gval *g = km_get(&g_cs, &k, h);
     if (g) {
@@ -2031,9 +2152,9 @@ static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, 
             if (p) { g_ncs++; g_made++; g_frame_made++; g_probe_hit++; g_create_ms += dns / 1e6; g->p = p; g->busy = 0; pthread_cond_broadcast(&g_busy_cv); }
             else { g_probe_miss++; g_probe_miss_ns += dns; }
             pthread_mutex_unlock(&g_mu);
-            if (p) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; pw_note(VKA_PW_CS, s5, "", 0); return p; }
+            if (p) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; uint64_t m2[2] = {umask, smask}; if (umask | smask) pw_note(VKA_PW_CS, s5, m2, 16); else pw_note(VKA_PW_CS, s5, "", 0); return p; }   // PEANUTS: a retyped one's masks
         }
-        cs_queue(g, cs, lay);
+        cs_queue(g, cs, lay, csm, umask, smask);
         atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed);
         return VK_NULL_HANDLE;
     }
@@ -2070,6 +2191,9 @@ static void cs_build(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderMod
     { double ms_ = (now_ns() - t0) / 1e6; static _Atomic int n; if (!r && ms_ > 50 && atomic_fetch_add(&n, 1) < 200) VLOG("compute pipeline %016llx took %.0f ms%s", (unsigned long long)cs->key, ms_, prewarm ? " (prewarm)" : async ? " in the background (asynchronous)" : "");
       // (noted before the save, so the save that follows a long one has its key: until 2026-11-15 the save came first and the key waited for the next one)
       if (!prewarm && !over && !(umask | smask)) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; pw_note(VKA_PW_CS, s5, "", 0); }   // (one not made stays out of the prewarm list)
+      // PEANUTS: a retyped variant (integer images bound) as a record with its masks: before, it never reached the list, so no seed made it ahead and every first start built it
+      // on the frame path (Hyrule Warriors: Age of Calamity: 7 programs, 0.8-3.9 s each, ~15 s of frozen frames at its first battle) while the prewarm made the base variant no draw used
+      if (!prewarm && !over && (umask | smask) && !r) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; uint64_t m2[2] = {umask, smask}; pw_note(VKA_PW_CS, s5, m2, 16); }
       if (!prewarm && !r && ms_ > 1000) vka_pso_save(2); }
 }
 VkPipeline vka_cs_pipeline(vka_shader *cs, const vka_layout *lay) { int made; return cs_obtain(cs, lay, 0, &made, 0, 0, 0); }
@@ -2079,5 +2203,10 @@ VkPipeline vka_cs_pipeline_frame(vka_shader *cs, const vka_layout *lay) {   // P
     g_last_pending = !p && atomic_load_explicit(&g_as_skips, memory_order_relaxed) != s0;
     return p;
 }
-VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, uint64_t umask, uint64_t smask) { int made; return cs_obtain(cs, lay, 0, &made, umask, smask, 0); }
+VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, uint64_t umask, uint64_t smask) {   // PEANUTS: a dispatch's (frame 1): g_last_pending as vka_cs_pipeline_frame
+    int made; uint64_t s0 = atomic_load_explicit(&g_as_skips, memory_order_relaxed);
+    VkPipeline p = cs_obtain(cs, lay, 0, &made, umask, smask, 1);
+    g_last_pending = !p && atomic_load_explicit(&g_as_skips, memory_order_relaxed) != s0;
+    return p;
+}
 #endif

@@ -67,6 +67,8 @@ public final class LibrarySettings {
                 .value("Reads the folders again").chevron(a).view);
         card.addView(new PUi.Setting(a, "🧹", "Free up space", Haptics.on(Haptics.Word.TICK, v -> freeUpSpace(a)))
                 .value("Delete original dumps of games already built").chevron(a).view);
+        String played = dev.peanuts.launch.PlayTime.totalLine(a);   // the total play time of every game (dev.peanuts.launch.PlayTime), once one was played
+        if (played != null) { PUi.Setting pr = new PUi.Setting(a, "⏱️", "Played", null).value(played); pr.view.setClickable(false); pr.view.setFocusable(false); card.addView(pr.view); }
         // Haptics and Motion: each row is its own switch between two values, System (the default: what Android's settings say) and the quieter one
         hapticsRow = new PUi.Setting(a, "📳", "Haptics", v -> {
             boolean off = !PeanutsPrefs.hapticsOff(a);
@@ -103,7 +105,12 @@ public final class LibrarySettings {
         card.addView(bottomRow.view);
         gamesRow = new PUi.Setting(a, "🎮", "Games without a companion", v -> {
             if (!PeanutsPrefs.bottomScreen(a)) { Haptics.play(v, Haptics.Word.REJECT); return; }
-            PeanutsPrefs.bottomScreenInGames(a, !PeanutsPrefs.bottomScreenInGames(a));
+            // Android, then Stats, then Cover, then Android again
+            boolean in = PeanutsPrefs.bottomScreenInGames(a);
+            boolean stats = PeanutsPrefs.bottomScreenGamesPage(a).equals(PeanutsPrefs.GAMES_STATS);
+            if (!in) { PeanutsPrefs.bottomScreenInGames(a, true); PeanutsPrefs.bottomScreenGamesPage(a, PeanutsPrefs.GAMES_STATS); }
+            else if (stats) PeanutsPrefs.bottomScreenGamesPage(a, PeanutsPrefs.GAMES_COVER);
+            else PeanutsPrefs.bottomScreenInGames(a, false);
             Haptics.play(v, Haptics.Word.CLICK);
             refreshRows();
         });
@@ -158,8 +165,10 @@ public final class LibrarySettings {
             boolean on = PeanutsPrefs.bottomScreen(a);
             gamesRow.view.setAlpha(on ? 1f : 0.5f);
             gamesRow.value(!on ? "Needs Bottom screen on."
-                    : PeanutsPrefs.bottomScreenInGames(a) ? "The game's cover stays on the second screen while you play. Tap to leave it to Android."
-                    : "Android's own screen while you play. Tap to keep the game's cover there.");
+                    : !PeanutsPrefs.bottomScreenInGames(a) ? "Android's own screen while you play. Tap for the game's live stats there."
+                    : PeanutsPrefs.bottomScreenGamesPage(a).equals(PeanutsPrefs.GAMES_STATS)
+                    ? "Stats: frame rate, frame times, GPU, CPU, temperature, battery and the game's RAM while you play. Tap for the game's cover instead."
+                    : "The game's cover stays on the second screen while you play. Tap to leave it to Android.");
         }
     }
 
@@ -209,7 +218,7 @@ public final class LibrarySettings {
 
     // ---- Pickers ----
 
-    /** The keys picker (Settings › Library › Keys, the first-run card, the sheet's Add keys…) */
+    /** The keys picker (Settings › Console › Keys, the first-run card, the sheet's Add keys…) */
     public static void pickKeys(Activity a) {
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
@@ -233,7 +242,7 @@ public final class LibrarySettings {
         a.startActivityForResult(i, request);
     }
 
-    /** Settings › Library › Firmware fonts: a folder of extracted NCAs (the old way), or a firmware .zip with the same NCAs flat inside it (stored
+    /** Settings › Console › Firmware: a folder of extracted NCAs (the old way), or a firmware .zip with the same NCAs flat inside it (stored
      * or deflated — users usually have firmware as a zip, not pre-extracted) */
     static void pickFirmwareSource(Activity a) {   // also the game sheet's and the first-run card's firmware buttons
         LinearLayout box = new LinearLayout(a);
@@ -287,6 +296,7 @@ public final class LibrarySettings {
     /** MainActivity.onActivityResult's first line: true when the request was one of this package's (handled, whatever the result) */
     public static boolean result(Activity a, int request, int result, Intent data) {
         if (BuildLogUi.result(a, request, result, data)) return true;   // Share build log's Save to a folder (REQ_SAVE 71)
+        if (PackImportUi.result(a, request, result, data)) return true;   // the game sheet's Import pack… (72, 73)
         if (request < REQ_KEYS || request > REQ_MOD_ZIP) return false;
         if (result != Activity.RESULT_OK || data == null || data.getData() == null) return true;
         Uri u = data.getData();
@@ -324,14 +334,16 @@ public final class LibrarySettings {
             case REQ_DLC_DIR: PeanutsPrefs.dlcDir(a, p); break;
             default: return true;
         }
-        if (!Environment.isExternalStorageManager()) {
-            new AlertDialog.Builder(a).setTitle("Allow file access").setMessage("The app needs All files access to read " + p + ". Allow it, then come back.")
-                    .setPositiveButton("Open settings", (d, w) -> openAccessSettings(a)).setNegativeButton("Later", null).show();
-        }
+        if (!Environment.isExternalStorageManager()) askAccess(a, "The app needs All files access to read " + p + ". Allow it, then come back.");
         refreshRows();
         Library.changed(a);
         if (request != REQ_FIRMWARE) Library.rescan(a);
         return true;
+    }
+
+    /** "Allow file access": why, and the button to the app's All files access page */
+    static void askAccess(Activity a, String why) {
+        new AlertDialog.Builder(a).setTitle("Allow file access").setMessage(why).setPositiveButton("Open settings", (d, w) -> openAccessSettings(a)).setNegativeButton("Later", null).show();
     }
 
     /** As upstream's MainActivity.openAccessSettings: the app's own All files access page, else the list */
@@ -421,7 +433,8 @@ public final class LibrarySettings {
         triedMoreFonts = true;
         File d = PeanutsPrefs.fontsDir(a);
         String src = PeanutsPrefs.firmwareDir(a);
-        boolean haveAll = new File(d, "cjk_sc.ttf").isFile() && new File(PeanutsPrefs.miiModelDir(a), "ShapeHigh.dat").isFile();   // PEANUTS: MiiModel too (the importer writes it beside the fonts)
+        boolean haveAll = new File(d, "cjk_sc.ttf").isFile() && new File(PeanutsPrefs.miiModelDir(a), "ShapeHigh.dat").isFile()   // PEANUTS: MiiModel too (the importer writes it beside the fonts)
+                && dev.peanuts.users.FirmwarePictures.dir(a).isDirectory();   // the console's profile pictures too (Settings › Users), which the importer reads since then
         if (src == null || !new File(d, "standard.ttf").isFile() || haveAll || !src.startsWith("/") || !new File(src).exists()) return;
         extractFonts(a, src, null);
     }

@@ -230,6 +230,8 @@ public final class Library {
                 front(true);
                 Haptics.refresh(x); Motion.refresh(x);
                 Library l = current;
+                // the bottom screen card's play time after a game, and the toast of a session its Stop ended (the game's process writes both as it goes, maybe just after this)
+                if (l != null && l.a == x) { l.playTimesAgain(); UI.postDelayed(() -> { if (current == l && top == x) { l.playTimesAgain(); l.sessionToast(); } }, 2500); }
                 String id = played;
                 if (l == null || l.a != x || id == null) return;
                 played = null;
@@ -289,6 +291,21 @@ public final class Library {
                 Haptics.on(Haptics.Word.CLICK, v -> ScreensOff.show(a)));
         screensOffB.setVisibility(View.GONE);
         return screensOffB;
+    }
+
+    /**
+     * MainActivity.buildHome (PEANUTS hook): Home's header with the build line under the title as plain text. Upstream makes it selectable, which makes it a
+     * focus stop: a controller's first focus landed on it (the first focusable view of the page) and drew the focus frame round the whole line. The first
+     * cover takes the first focus instead (cover, setFocusedByDefault); the tag is still selectable in Settings › About.
+     */
+    public static LinearLayout homeHeader(LinearLayout header) {
+        plainText(header);
+        return header;
+    }
+
+    private static void plainText(View v) {
+        if (v instanceof TextView && ((TextView) v).isTextSelectable()) { ((TextView) v).setTextIsSelectable(false); v.setFocusable(false); }
+        if (v instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) v).getChildCount(); i++) plainText(((ViewGroup) v).getChildAt(i));
     }
 
     // ---- The hook ----
@@ -666,6 +683,9 @@ public final class Library {
     /** The library of this activity, null when its Home was never drawn */
     static Library of(Activity a) { return current != null && current.a == a ? current : null; }
     static Library now() { return current; }
+
+    /** The activity this library draws in */
+    Activity activity() { return a; }
     static Build buildNow() { return build; }
     static List<CompanionPort.Item> catalogNow() { return catalog; }
     String filterName() { return FILTER_NAMES[filter]; }
@@ -872,6 +892,7 @@ public final class Library {
 
         int cell = (Math.min(widthDp(), 900) - 40 - PUi.GAP * (cols - 1)) / cols;   // Banana's 20 dp gutters and 12 dp gaps
         List<View> cells = new ArrayList<>();
+        playTimes = dev.peanuts.launch.PlayTime.all(a);   // once per render: the bottom screen's card of a focused cover (bottom)
         for (Row r : show) cells.add(coverCell(r, cell));
         grid(cells, cols, 16);
         boolean first = lastCells == 0 && !cells.isEmpty();   // the grid shows after an empty one (the first scan ended): it enters as after a filter change
@@ -1046,6 +1067,27 @@ public final class Library {
 
     // ---- The covers ----
 
+    /** Every title's total play time (dev.peanuts.launch.PlayTime), read again at each render of the grid */
+    private Map<String, dev.peanuts.launch.PlayLedger.Entry> playTimes = Collections.emptyMap();
+
+    /** The session a game's Stop left (dev.peanuts.launch.PlayTime.sessionNote), shown once */
+    private void sessionToast() {
+        String note = dev.peanuts.launch.PlayTime.sessionNote(a);
+        if (note != null) Toast.makeText(a, note, Toast.LENGTH_LONG).show();
+    }
+
+    /** The bottom screen's card shows the focused game's total, read again after a game (playTimesAgain) */
+    private void playTimesAgain() {
+        playTimes = dev.peanuts.launch.PlayTime.all(a);
+        for (Map.Entry<String, dev.peanuts.launch.PlayLedger.Entry> e : playTimes.entrySet()) BottomScreen.playTime(e.getKey(), e.getValue());
+    }
+
+    /** The title's play time for the bottom screen's card, null when the game was never played with this app */
+    private dev.peanuts.launch.PlayLedger.Entry play(String titleId) {
+        dev.peanuts.launch.PlayLedger.Entry e = playTimes.get(titleId.toUpperCase(Locale.ROOT));
+        return e == null || e.ms <= 0 ? null : e;
+    }
+
     /**
      * One cell of the grid: the cover (PUi's tile at cell size, the NACP icon once it has landed) with the state on it, the name under it. The cover is the focusable,
      * clickable thing: a tap plays a ready game, opens the Building filter for a building one, the sheet or Manage otherwise; a long press (or Y) opens Manage
@@ -1171,7 +1213,7 @@ public final class Library {
 
         cell.addView(cover, PUi.fill());
         cell.addView(n, nlp);
-        if (firstCover == null) firstCover = cover;
+        if (firstCover == null) { firstCover = cover; cover.setFocusedByDefault(true); }   // a controller's first focus on Home: the first game (homeHeader)
         return cell;
     }
 
@@ -1280,7 +1322,7 @@ public final class Library {
         }
         if (st == READY) {
             k.kind = BottomScreen.Card.K_READY; k.state = "Ready";
-            k.companion = companionVersion(r); k.played = r.used();
+            k.companion = companionVersion(r); k.played = r.used(); k.play = play(r.id());
             k.primary = tap; k.primaryLabel = r.game != null ? "Play" : "Open"; k.primaryIcon = r.game != null ? R.drawable.ic_play : 0;
             if (r.game != null) { k.second = hold; k.secondLabel = "Game page"; }
         } else if (st == BUILD) {
@@ -1456,7 +1498,7 @@ public final class Library {
                     left = PUi.button(a, "Free up space", PUi.Kind.TONAL, v -> {
                         Haptics.play(v, Haptics.Word.CLICK);
                         try { a.startActivity(new android.content.Intent(android.provider.Settings.ACTION_INTERNAL_STORAGE_SETTINGS)); }
-                        catch (RuntimeException e) { Toast.makeText(a, "Open Settings › Storage to free some space.", Toast.LENGTH_LONG).show(); }
+                        catch (RuntimeException e) { Toast.makeText(a, "Open Settings › Library › Storage to free some space.", Toast.LENGTH_LONG).show(); }
                     });
                     right = PUi.button(a, "Retry", PUi.Kind.SOFT, Haptics.on(Haptics.Word.CLICK, v -> openSheet.run()));
                     break;
@@ -1476,8 +1518,8 @@ public final class Library {
             right = play;
         }
         PUi.add(c, PUi.pair(a, left, right), 14);
-        // a build that stopped or failed: everything it left, in one .zip (BuildLogUi; the same bundle as the game's Storage tab and Settings › Share log)
-        if (b.failed) PUi.add(c, PUi.button(a, "Share build log", PUi.Kind.QUIET, Haptics.on(Haptics.Word.TICK, v -> BuildLogUi.share(a, b.titleId, name))), 8, PUi.wrap());
+        // a build that stopped or failed: its build log, or its newest game run when it has one too (BuildLogUi.shareLog asks which)
+        if (b.failed) PUi.add(c, PUi.button(a, "Share log", PUi.Kind.QUIET, Haptics.on(Haptics.Word.TICK, v -> BuildLogUi.shareLog(a, b.titleId, name, null, null))), 8, PUi.wrap());
         updateBuildCard(b, true);
         return c;
     }
@@ -1531,11 +1573,12 @@ public final class Library {
     /** The sheet's Build: the state to the pipeline; the card shows the rest. Returns why it could not start, or null */
     String startBuild(GameSheet.State s) {
         if (BuildPipeline.running() != 0) return "A build is running now. Wait for it to finish.";
+        if (dev.peanuts.pack.PackImport.busy(s.titleId)) return "A pack of " + s.name + " is being imported. Wait for it to finish, then build.";   // GitHub issue #44: the import writes the pack folder this build would use
         // Keys and firmware fonts are a one-time setup requirement (owner, 2026-11-13), checked here as a cheap file-presence gate for every entry point
         // that can start a build (the sheet's Build/Build anyway/Rebuild, and Resume below): GameSheet already disables its Build button for the same
         // reason, so this is only a last line of defense, never a per-build re-validation against the importer.
-        if (!PeanutsPrefs.hasKeys(a)) return "Add your keys first (Settings › Library), then build.";
-        if (!PeanutsPrefs.hasFonts(a)) return "Add your firmware first (Settings › Library), then build.";
+        if (!PeanutsPrefs.hasKeys(a)) return "Add your keys first (Settings › Console), then build.";
+        if (!PeanutsPrefs.hasFonts(a)) return "Add your firmware first (Settings › Console), then build.";
         BuildRequest r = new BuildRequest();
         r.titleId = s.titleId; r.name = s.name; r.base = s.base; r.update = s.update;
         r.dlcs = new ArrayList<>(s.dlcs);

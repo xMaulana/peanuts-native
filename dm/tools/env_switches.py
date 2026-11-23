@@ -38,6 +38,9 @@ def scan():
         if p.endswith('.md'):
             for n in set(re.findall(r'`(' + NAME + r')', text)): docs.setdefault(n, set()).add(p)
             continue
+        if p.endswith('CMakeLists.txt'):   # PEANUTS: a build's compile definitions (DM_NSP_DIRECT) are macros, not switches
+            for l in re.findall(r'(?i)^.*compile_definitions.*$', text, re.M): macros |= set(re.findall(NAME, l))
+            continue
         if not p.endswith(CODE) and not p.startswith('scripts/'): continue
         # names the code defines as preprocessor macros (the generated profile header's DM_GAME_*, host constants) are not switches, unless something also reads
         # them from the environment (DM_GAME_ENV, which overrides the profile's macro of that name)

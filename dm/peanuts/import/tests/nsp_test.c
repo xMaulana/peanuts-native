@@ -198,12 +198,20 @@ static void test_importer(const FxGame *g, const char *what) {
 }
 
 // ---- 2: the host, the dumps beside the .nup made of them
+static int count_base(void *u, const char *path, unsigned long long size, unsigned long long off, int codec) { (void)size; (void)off; (void)codec; if (!strncmp(path, "base/", 5)) ++*(int *)u; return 0; }
 static void test_host(const FxGame *g, const char *tag, const char *dir) {
     char nup[700], spec[1300], nupspec[800], tid[17], dm[32], nm[32], db[32], nb[32]; const char *in[2] = { g->base, g->upd };
     printf("2 the host, %s\n", tag);
     snprintf(nup, sizeof nup, "%s/%s.nup", dir, tag); snprintf(tid, sizeof tid, "%016llx", (unsigned long long)g->tid);
     snprintf(dm, sizeof dm, "d%s", tag); snprintf(nm, sizeof nm, "n%s", tag); snprintf(db, sizeof db, "db%s", tag); snprintf(nb, sizeof nb, "nb%s", tag);
+    nximport_set_keep_base(1);   // with its base package: the base alone is read from it below
     CHECK(!nximport_write_nup(nup, in, 2, tid, NULL, NULL), "the importer makes a .nup of the two dumps (%s)", nximport_last_error());
+    nximport_set_keep_base(0);
+    { char lean[720], ln[32], lb[32], lbs[800]; snprintf(lean, sizeof lean, "%s/%s-lean.nup", dir, tag); snprintf(ln, sizeof ln, "l%s", tag); snprintf(lb, sizeof lb, "lb%s", tag);
+      CHECK(!nximport_write_nup(lean, in, 2, tid, NULL, NULL), "by default the .nup leaves the base package out (%s)", nximport_last_error());
+      struct stat a, b; CHECK(!stat(lean, &a) && !stat(nup, &b) && a.st_size < b.st_size, "and is smaller (%lld < %lld bytes)", (long long)a.st_size, (long long)b.st_size);
+      CHECK(mount_rom(ln, lean, g->ubuild) && !files_differ(ln, g->uf, g->nuf), "every patched file read from it is the fixture's");
+      int nb = 0; (void)lb; (void)lbs; CHECK(!nximport_verify_nup(lean, count_base, &nb) && !nb, "it verifies and holds no base/ file (%d)", nb); }
     snprintf(spec, sizeof spec, "nsp:%s|%s", g->base, g->upd);
     CHECK(mount_rom(dm, spec, g->ubuild), "DM_ROMFS=nsp:<base>|<update> mounts");
     CHECK(mount_rom(nm, nup, g->ubuild), "DM_ROMFS=<file>.nup mounts as before (its newest update)");

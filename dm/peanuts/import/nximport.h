@@ -41,6 +41,12 @@ NXIMPORT_API int nximport_write_nup(const char *out_nup, const char **inputs, in
 // The writer's reader threads (decrypt + decompress run in parallel; the .nup is the same whatever the count): n <= 0 = automatic (the NXIMPORT_THREADS
 // environment variable if set, else the online CPUs capped at 6). Set before nximport_write_nup; about 256 MiB of buffers are in flight whatever n.
 NXIMPORT_API void nximport_set_threads(int n);
+// PEANUTS: the base package next to an update. An update's package holds a full RomFS (its BKTR patch applied), so once the newest update has its own
+// exefs/main, exefs/main.npdm and a non-empty RomFS the base package is never read to play it: by default it is left out of the .nup (the base dump is
+// still read, as the update's BKTR base) and the updates are marked standalone. That halves a game whose data is one big archive the update touches
+// (Yoshi's Crafted World: one 5.6 GB .pak, 10.6 GiB with the base, 5.3 GiB without). on != 0 keeps the base package (to play version 0 from the .nup).
+// Set before nximport_write_nup.
+NXIMPORT_API void nximport_set_keep_base(int on);
 // Stop: on != 0 makes a running nximport_write_nup end within about a second with -1 ("the import was stopped"), its partial output and temporary files
 // removed; any thread may call it. The flag is cleared when that import returns, and by on = 0 (a caller sets that before an import starts, so a Stop
 // meant for an earlier one does not stop it).

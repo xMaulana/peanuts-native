@@ -215,10 +215,11 @@ elif fps_target_why.startswith('[RED] '): print(f'[RED] {NAME}: {fps_target_why[
 # Its constructor reserves 37 GB of address space for its pools. Its one call is cut, and observation gate OBS_UE_MALLOC goes on it (below), where x0 holds the object: the host gives
 # the object its own allocator's vtable there (dm/host/hle_uemalloc.c), whose place and slot layout the fixups table names (UE_MALLOC_VT, UE_MALLOC_SLOT)
 import ue_malloc
-UE_CALL, UE_VT, UE_SLOT, ue_why = ue_malloc.find(bytes(IMG), TEXT_END, RO_OFF, DATA_OFF)
-if UE_CALL is not None:
-    cuts.append((UE_CALL, bytes(IMG[UE_CALL:UE_CALL + 4]).hex(), struct.pack('<I', NOP).hex(), f'{ue_why}: the constructor call → nop, gate OBS_UE_MALLOC on it (ue_malloc.py)'))
-    struct.pack_into('<I', IMG, UE_CALL, NOP)
+UE_CALLS, UE_VT, UE_SLOT, ue_why = ue_malloc.find(bytes(IMG), TEXT_END, RO_OFF, DATA_OFF)   # PEANUTS: every constructor call (#290)
+if UE_CALLS:
+    for call_off in UE_CALLS:
+        cuts.append((call_off, bytes(IMG[call_off:call_off + 4]).hex(), struct.pack('<I', NOP).hex(), f'{ue_why}: the constructor call at {call_off:#x} → nop, gate OBS_UE_MALLOC on it (ue_malloc.py)'))
+        struct.pack_into('<I', IMG, call_off, NOP)
     print(f'{NAME}: {ue_why}')
 elif ue_why.startswith('[RED] '): print(f'[RED] {NAME}: {ue_why[6:]}: Unreal\'s own allocator runs')
 
@@ -1459,9 +1460,10 @@ def stdalloc_gates():
     return out
 region_obs += stdalloc_gates()
 # Unreal's FMallocBinned3 (above): the gate on the cut constructor call, a nop now; x0 is the object (the gate number's upper bits name the register, 0)
-if UE_CALL is not None:
-    assert UE_CALL not in kinds and not any(lo <= UE_CALL < hi for wseg in windows for lo, hi in [(wseg[0].address, wseg[-1].address + 4)]), f'FMallocBinned3 gate conflicts with a rewrite site {UE_CALL:#x}'
-    region_obs.append((UE_CALL, OBS_UE_MALLOC, f'{NOP:08x}', 'FMallocBinned3 constructor call (cut): the object in x0; the host puts its allocator\'s vtable in (hle_uemalloc.c)'))
+if UE_CALLS:   # PEANUTS: every constructor call (#290)
+    for call_off in UE_CALLS:
+        assert call_off not in kinds and not any(lo <= call_off < hi for wseg in windows for lo, hi in [(wseg[0].address, wseg[-1].address + 4)]), f'FMallocBinned3 gate conflicts with a rewrite site {call_off:#x}'
+        region_obs.append((call_off, OBS_UE_MALLOC, f'{NOP:08x}', 'FMallocBinned3 constructor call (cut): the object in x0; the host puts its allocator\'s vtable in (hle_uemalloc.c)'))
 # Unreal's engine region (above): the gate on the store of its size, which the callback changes in that register and x1, the size the call asks for
 if UE_REGION is not None:
     assert UE_REGION_REG is not None, 'engine region gate has no size register'
@@ -1833,6 +1835,8 @@ if FAR:   # patch area before the base: file = text + ro + data (padded to 16K) 
     if BIG_TEXT and len(patch) > FRONT - 0x4000 and 'DM_PATCH_FRONT' not in os.environ:
         need = (len(patch) + 0x4000 + 0xFFFF) & ~0xFFFF
         print(f'{NAME}: patch area of {len(patch):#x} bytes does not fit in {FRONT:#x} before the base; rewriting again with {need:#x}', flush=True)
+        if os.environ.get('DM_IN_PROCESS'):   # PEANUTS: run inside the app's process (pack_android.run_in_process): no exec there; it runs this again with the variable, after this run is undone
+            sys.exit({'rerun_env': {'DM_PATCH_FRONT': hex(need)}})
         if os.name == 'nt':   # Windows has no exec: os.execve starts a new process and ends this one, and the caller would take this one's exit as the rewrite's
             import subprocess; sys.exit(subprocess.call([sys.executable] + sys.argv, env=dict(os.environ, DM_PATCH_FRONT=hex(need))))
         os.execve(sys.executable, [sys.executable] + sys.argv, dict(os.environ, DM_PATCH_FRONT=hex(need)))
@@ -1855,7 +1859,7 @@ with open(P('fixups.tsv'), 'w', encoding='utf-8', newline='\n') as f:
     if TARGET == 'android': f.write('# TARGET_ANDROID\t1\n')   # the slot base of Targets above: an Apple host refuses this module, an Android host every other
     if FS_STATE_OFF: f.write(f'# FPS_STATE_OFF\t{FS_STATE_OFF:#x}\n')   # frame step state page (FRAME_STEP): the loader writes the target fps there
     if OOT_PATCHES: f.write('# OOT_PATCHES\t1\n')
-    if UE_CALL is not None: f.write(f'# UE_MALLOC_VT\t{UE_VT:#x}\n# UE_MALLOC_SLOT\t{UE_SLOT:#x}\n')   # Unreal's FMallocBinned3 (ue_malloc.py): its vtable and the slot of its name getter, which names the slot layout
+    if UE_CALLS: f.write(f'# UE_MALLOC_VT\t{UE_VT:#x}\n# UE_MALLOC_SLOT\t{UE_SLOT:#x}\n')   # PEANUTS: UE_CALLS. Unreal's FMallocBinned3 (ue_malloc.py): its vtable and the slot of its name getter, which names the slot layout
     if FPS_TARGET_PTR is not None: f.write(f'# FPS_TARGET_PTR\t{FPS_TARGET_PTR:#x}\n# FPS_TARGET_FIELD\t{FPS_TARGET_FIELD:#x}\n')   # a target frame rate the game steps by (fps_target.py)
     for n, o in UE_CVARS.items(): f.write(f'# UE_CVAR:{n}\t{o:#x}\n')   # Unreal console variables (ue_cvar.py): the TAutoConsoleVariable registered under each name
     if RENDER_SCALE: f.write('# RENDER_SCALE\t1\n')   # a render-scale stub reads state +0x10 (the loader ignores the key; dm/games/settings.py offers the setting by it)

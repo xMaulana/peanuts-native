@@ -62,6 +62,7 @@ A deferred renderer: the scene draws into a G-buffer of two integer targets (R32
 <!-- PEANUTS: Turnip lobby and PC pack validation -->
 - The Turnip v26.2.0 R5 seed contains 314 pipelines. A fresh cache prepared all 314 in 4.1 seconds before gameplay. The warm relaunch loaded the saved cache and prepared 317 keys in the background.
 - The PC targeted build for update 1.4.0 and both Multiplayer Packs took 69.45 seconds, compared with 165.32 seconds for a full build and 0.69 seconds for an incremental build. The resulting runtime pack payloads matched byte for byte.
+- **Resolved: coloured dashed lines along triangle edges in the flashlight's light on Turnip** <!-- PEANUTS: DM_VK_QUAD_SHFL --> (#283; every Turnip build, gone with the flashlight off). 28 pixel shaders take their own derivatives with warp shuffles inside a quad, and Turnip may end helper lanes before a plain shuffle reads them. **Current:** the replay makes those shuffles quad operations (`DM_VK_QUAD_SHFL`, on by default on Turnip): [Warp shuffles inside a quad read ended helper lanes on Turnip](../../../docs/reference/shaders.md#warp-shuffles-inside-a-quad-read-ended-helper-lanes-on-turnip). Checked on the AYN Thor with Turnip v26.2.0 R5 from the reporter's save; Qualcomm's driver not tried.
 - **Open:** reflections on lamp-lit lobby floors can flicker while Luigi is stationary or moving. An attachment-copy experiment changed no pixels in matched-driver replay. The same captured frame rendered different lighting on two Turnip versions.
 
 ## Files and shaders

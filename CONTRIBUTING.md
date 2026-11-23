@@ -56,4 +56,4 @@ Say what was not checked too.
 
 ## How changes get in
 
-The maintainer reviews every PR against [the review checklist](docs/agents/07-pr-review.md), builds and tests it on the current tree, runs it on the phone, and merges it into `android`, so the PR shows as merged and its author as a contributor. The maintainer may ask for a split, or rebase a PR that conflicts with `android`. A merged change reaches players with the next release.
+The maintainer reviews every PR against [the review checklist](docs/agents/07-pr-review.md), builds and tests it on the current tree, runs it on the phone, and merges it into `android`, so the PR shows as merged and its author as a contributor. <!-- PEANUTS: authorship of a merged pull request --> A merged pull request lands with the contributor as the commit author and the maintainer as the committer, with a `Co-authored-by` line for the maintainer. No AI tool is ever named as an author or co-author. The maintainer may ask for a split, or rebase a PR that conflicts with `android`. A merged change reaches players with the next release.

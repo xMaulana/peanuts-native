@@ -392,6 +392,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
      * views show them only while the present does not (not yet drawn, DM_VK_OVERLAY=0, a failure), the top-right one set again only when its text changed
      */
     private void fpsTick() {
+        dev.peanuts.launch.PlayTime.tick(this, titleId(), started && resumedNow && !stopped && !paused && prewarmCover == null);   // PEANUTS: total play time (only while the game runs, not behind "Preparing shaders")
         // PEANUTS: Stable 30 uses a window-local 60 Hz mode; requested FG and the running cap are authoritative.
         if (started && resumedNow && !stopped && !paused) runningDisplayMode.update(this, Native.fpsCapStatus(), Native.frameGenEnabled());
         else runningDisplayMode.clear(this);
@@ -632,7 +633,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         if (picSize < PictureFit.SIZE_MAX) env.add("DM_VK_PICTURE_SIZE=" + picSize);
         String lang = GameLanguage.env(Prefs.gameLang(this, id), GameSettings.phoneTag());   // Game settings › Game language: the phone's by default (a DM_LANG line of the user's wins)
         if (lang != null) env.add(lang);
-        env.addAll(Users.env(this));   // Settings › Users: the users the game's account calls list and its user selector offers (hle_account.c), and the one it starts with
+        env.addAll(Users.env(Users.list(this), dev.peanuts.users.WhoPlaysActivity.startUser(this, getIntent(), Users.defaultUid(this))));   // PEANUTS: Settings › Users: the users the game's account calls list and its user selector offers (hle_account.c), and the one it starts with: the one Who's playing? picked
         return gpuNote;
     }
     private String readinessLine;
@@ -710,7 +711,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             for (Readiness.Check c : fails) placed |= "ext.VK_KHR_map_memory2".equals(c.fact) || "ext.VK_EXT_map_memory_placed".equals(c.fact) || "feature.memoryMapPlaced".equals(c.fact);
             GpuDriver.Info drv = GpuDriver.selected(this, id);
             boolean custom = Readiness.customDriversFit(f);   // the custom drivers are Adreno drivers: no help on another GPU (its reported vendor ID)
-            if (placed && drv == null && !custom) m.append(".\n\nThis GPU's own driver has no placed memory maps, so nothing is drawn: the screen stays black while the game runs. "
+            if (placed && dev.peanuts.ui.MaliDriver.arm(f)) m.append(dev.peanuts.ui.MaliDriver.advice(drv == null ? null : drv.label(), f));   // PEANUTS: on Mali a PanVK build with placed maps, never System (#262)
+            else if (placed && drv == null && !custom) m.append(".\n\nThis GPU's own driver has no placed memory maps, so nothing is drawn: the screen stays black while the game runs. "
                     + "The custom drivers the app can install are for Adreno GPUs only, so this phone cannot draw the game yet.");
             else if (placed) m.append(".\n\nWith this GPU driver (").append(drv == null ? "System" : drv.label()).append(") nothing is drawn: the screen stays black while the game runs. ")
                     .append(drv == null ? "Pick a custom driver that has placed memory maps" : "Pick System (the phone's own driver)")
@@ -1115,6 +1117,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     @Override protected void onDestroy() {
         runningDisplayMode.clear(this);   // PEANUTS: release this game window's display request
         dev.peanuts.Companion.stop();   // PEANUTS
+        dev.peanuts.launch.PlayTime.flush(this);   // PEANUTS: total play time, what is still in memory
         TextInput.gone(this);
         UserPicker.gone(this);
         CtrlScreen.gone(this);

@@ -21,6 +21,15 @@ uint64_t now_ns(void);
 // A blocking native HLE wait releases the guest core. With the condition mutex
 // held, enter with 1 before waiting and balance with 0 after reacquiring it.
 void dm_thread_native_wait(int entering);
+// PEANUTS begin: what a Horizon core keeps to one thread until it blocks, where the SDK takes no lock of its own (hle_fontll.c's font engines; hle_thread.c)
+extern __thread int dm_core_excl_held;        // the calling thread holds such a resource
+extern void (*dm_core_excl_release)(void);    // gives back what the calling thread holds: hle_thread.c calls it at the thread's SVCs and when it enters a native HLE wait
+uint64_t dm_thread_id_self(void);             // the calling guest thread's ID (never reused); 0 for a host thread
+int dm_thread_core_excl_wait(uint64_t owner); // whether the caller leaves such a resource to guest thread `owner` between two uses, as its core would
+void dm_thread_describe(uint64_t id, char *buf, size_t n);   // "'name' (priority, core, mask)" of guest thread id, for a log line
+extern void *(*dm_fontll_enter)(void *engine, const char *what);   // hle_sdk16.c's take-overs of ScalableFontEngine::Initialize and LoadFont: set by hle_fontll.c
+extern void (*dm_fontll_leave)(void *slot);
+// PEANUTS end
 void dm_thread_service_connect(void);   // an HLE call that stands for connecting to a service on Horizon: threads started so far get to run (hle_thread.c)
 void dm_thread_service_request(void);   // an HLE call that is a blocking service request on Horizon: the caller gives up its core (hle_thread.c)
 uint64_t guest_ns(void);              // Guest clock (hle_os.c; does not advance while frozen, guest_clock_freeze)

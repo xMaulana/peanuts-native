@@ -257,8 +257,16 @@ PC_DECODE = {
     '01009720213B0000': True,    # Captain Tsubasa 2: World Fighters (Unreal IoStore, Oodle)
     '0100AD80208A8000': True,    # PEANUTS: Demon Slayer 2 (inline Unreal IoStore shaders, Oodle)
     '0100606026F12000': True,    # FINAL FANTASY RESONANCE (Unreal IoStore, Oodle Mermaid)
+    '0100F7E00C70E000': True,    # PEANUTS: Hogwarts Legacy 1.0.5 (Unreal pak, Oodle Kraken): a PC build's split had all 65,047 of the profile's keys, its tables the profile's byte for byte (2026-11-22)
     '01005270232F2000': True,    # OCTOPATH TRAVELER 0 (Unreal pak, Oodle Mermaid): its streams and keys were checked, a build from its game files was not run
     '01003E601E324000': False,   # DRAGON QUEST III HD-2D Remake (Unreal pak, LZ4)
+}
+
+# The games whose shaders sit in Oodle-compressed archives this computer has no checked decoder for: refused before the import (check_device_steps) unless a decoder
+# is given (DM_OODLE_OOZ, or the game's own with DM_OODLE_HOST and DM_OODLE_MODULES). New Pokémon Snap's DRPF archives: drp.py takes the ooz worker, but no PC build
+# from its game files has been checked against the profile's keys, so it is not in PC_DECODE
+PC_REFUSE = {
+    '0100F4300BF2C000': 'its shaders are in DRPF archives with Oodle-compressed entries',   # New Pokémon Snap
 }
 
 
@@ -356,7 +364,11 @@ def pc_decode(app, name=None):
 def check_device_steps(app, name=None, have=()):
     """Refuse, before any import, a game whose shaders need a step that runs the game or the phone's decoder (GLSLC capture, Unreal Oodle archives), which
     a computer cannot do here: the profile's shader_map.tsv has /glslc_capture/ or /ue_shaders/ rows. Not refused when the folder of those files is
-    given (DM_GLSLC_CAPTURE / DM_UE_SHADERS), nor for the Unreal step when this computer does it itself (have: pc_decode's settings with DM_UE_DECODE)"""
+    given (DM_GLSLC_CAPTURE / DM_UE_SHADERS), nor for the Unreal step when this computer does it itself (have: pc_decode's settings with DM_UE_DECODE).
+    A PC_REFUSE game stops here unless a decoder is given"""
+    if app in PC_REFUSE and not os.environ.get('DM_OODLE_OOZ') and not (os.environ.get('DM_OODLE_HOST') and os.environ.get('DM_OODLE_MODULES')):
+        die(f'{name or app} ({app}): build it on the phone; the PC builder can\'t decode its archives yet ({PC_REFUSE[app]}). '
+            'Use Build in the Peanuts app on the device: it decodes them with the game\'s own code.')
     for marker, step, var, folder, pat, why in STEP_MARKERS:
         if not profile_has(app, marker): continue
         if folder_given(var, pat): continue

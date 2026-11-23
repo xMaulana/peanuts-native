@@ -124,6 +124,7 @@ DM_HLECOUNT	developer	Diagnostics			text			both
 DM_HLECOUNT_AT	developer	Diagnostics			text			both						
 DM_ICON	developer	Diagnostics			text			both						
 DM_IMPORTS	developer	Diagnostics			text			both						
+DM_IN_PROCESS	internal	Packing			text			both						Set by the packer for a tool it runs in process [PEANUTS]
 DM_KBD	developer	Game			text			both						
 DM_KBD_PLAYER	internal	Game			text			both						Mac or iOS only
 DM_KEYS	developer	Input			text			both						
@@ -150,6 +151,7 @@ DM_MEM_CAP_GB	internal	Memory			text			both						Mac or iOS only
 DM_MEM_FILEBACK	advanced	Memory	RAM saver		toggle			game		Game settings > RAM saver				
 DM_MEM_FILEBACK_KINDS	developer	Memory			text			both						
 DM_MEM_FILEBACK_MB	developer	Memory			text			both						
+DM_MEM_FILEBACK_RAM_GB	developer	Memory			text			both						
 DM_METAL_CAPTURE	internal	Diagnostics			text			both						Mac or iOS only
 DM_METAL_HUD	internal	Game			text			both						Mac or iOS only
 DM_MII_DB	developer	Diagnostics			text			both						
@@ -294,6 +296,8 @@ DM_OOT_TEXTURE_POOL_X2	developer	Memory			text			both
 DM_OOT_WIDE_KEEP	developer	Diagnostics			text			both						
 DM_OPMODE	developer	Game			text			both						
 DM_OPTION_PATCHES	developer	Game			text			both						
+DM_OPUS_DUMP	developer	Diagnostics			text			both						
+DM_OPUS_SDK	developer	Diagnostics			text			both						
 DM_OVERLAY	developer	Game			text			both						
 DM_PACKER_COMMIT	developer	Diagnostics			text			both						
 DM_PAD_DEADZONE	developer	Input			text			both						
@@ -455,6 +459,7 @@ DM_UE_SHADERS	developer	Diagnostics			text			both
 DM_UE_TEXTURE_POOL	internal	Memory			text			both						Mac or iOS only
 DM_USER	developer	Game			text			both						
 DM_USERS	developer	Game			text			both						
+DM_USER_IMAGES	developer	Game			text			both						
 DM_VK_ADPF	developer	Graphics			text			both						
 DM_VK_ADPF_GPU	developer	Graphics			text			both						
 DM_VK_ADPF_PIPELINE	developer	Graphics			text			both						
@@ -475,7 +480,13 @@ DM_VK_CLASSIC_RP	advanced	Performance	Classic render passes		toggle			game		Game
 DM_VK_COALESCE_PCT	developer	Graphics			text			both						
 DM_VK_COMPILE_TRACE	developer	Diagnostics			text			both						
 DM_VK_CS_ASYNC	developer	Graphics			text			both						
+DM_VK_CS_ASYNC_RETYPE	developer	Graphics			text			both						
+DM_VK_CS_LANE	developer	Performance			text			both						
+DM_VK_CS_LANE_MEM_MB	developer	Performance			text			both						
 DM_VK_CS_SHARED_OVER	developer	Diagnostics			text			both						
+DM_VK_CS_WARM	developer	Performance			text		1 on Turnip, 0 elsewhere; DM_VK_CS_WARM=1 forces it on	both						
+DM_VK_CS_WARM_MAX	developer	Performance			text			both						
+DM_VK_CS_WARM_STOP_MS	developer	Performance			text			both						
 DM_VK_DEVICE_FAULT	developer	Graphics			text			both						
 DM_VK_DISPATCH_LOG	developer	Diagnostics			text			both						
 DM_VK_DISPATCH_ORDER	developer	Graphics			text			both						
@@ -505,6 +516,7 @@ DM_VK_EVENT_GATE	developer	Graphics			text			both
 DM_VK_EVENT_LOG	developer	Diagnostics			text			both						
 DM_VK_EVENT_PARK_MS	developer	Diagnostics			text			both						
 DM_VK_EVENT_WAIT	developer	Graphics			text			both						
+DM_VK_FB_LOOP	developer	Diagnostics			text			both						
 DM_VK_FB_PIN	developer	Diagnostics			text			both						
 DM_VK_FD_ALIAS	developer	Graphics			text			both						
 DM_VK_FG	developer	Graphics			text			both						
@@ -671,12 +683,14 @@ DM_VK_PSO_LINK_NOW	developer	Performance			text			both
 DM_VK_PSO_ORDER	developer	Performance			text			both						
 DM_VK_PSO_PREFETCH	developer	Performance			text			both						
 DM_VK_PSO_PREP	developer	Performance			text			both						
+DM_VK_PSO_PREP_DEPTH0	developer	Performance			text			both						
 DM_VK_PSO_PREP_MEM_MB	developer	Memory			text			both						
 DM_VK_PSO_PREP_THREADS	developer	Performance			text			both						
 DM_VK_PSO_SLOTS	developer	Performance			text		1 with Turnip, 4 with other drivers	both						
 DM_VK_PUSH_DEDUP	developer	Graphics			text			both						
 DM_VK_PUSH_DELTA	developer	Diagnostics			text			both						
 DM_VK_QS_TRACE	developer	Diagnostics			text			both						
+DM_VK_QUAD_SHFL	developer	Graphics			text		1 with Turnip, 0 with other drivers	both						
 DM_VK_RANGE_WATCH	developer	Diagnostics			text			both						
 DM_VK_RANGE_WATCH_FRAMES	developer	Diagnostics			text			both						
 DM_VK_RANGE_WATCH_FROM	developer	Diagnostics			text			both						
@@ -684,6 +698,7 @@ DM_VK_RANGE_WATCH_LINES	developer	Diagnostics			text			both
 DM_VK_RC_LOG	developer	Diagnostics			text			both						
 DM_VK_RC_LOG_FROM	developer	Diagnostics			text			both						
 DM_VK_RC_QUERY_MEM	developer	Diagnostics			text			both						
+DM_VK_RD_GW	developer	Graphics			text			both						
 DM_VK_RD_SPLIT	developer	Packing			text			both						
 DM_VK_RD_TOUCH	developer	Input			text			both						
 DM_VK_READBACK_LOG	developer	Diagnostics			text			both						
@@ -729,6 +744,8 @@ DM_VK_SUBGROUP_GS	developer	Graphics			text		0 (one-lane geometry subgroups) wit
 DM_VK_SUBGROUP_PIN	developer	Performance			text			both						
 DM_VK_SWAP_RB	developer	Diagnostics			text			both						
 DM_VK_SYNCLOG	developer	Diagnostics			text			both						
+DM_VK_TABLE_POOL	developer	Memory			text			both						
+DM_VK_TABLE_PREMAKE	developer	Graphics			text			both						
 DM_VK_TBUF	developer	Graphics			text			both						
 DM_VK_TBUF_COPY	developer	Graphics			text			both						
 DM_VK_TBUF_GW	developer	Graphics			text			both						

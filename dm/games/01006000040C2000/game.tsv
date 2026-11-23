@@ -45,3 +45,10 @@ shader_note	Yoshi's Crafted World shaders (provisional profile)
 # ---- After the rewrite ----
 # the rewritten modules are larger than the default 64 MB of used memory (Age of Calamity: 66.6 MB → 72 MB)
 mem_used	0x70e4000
+
+# ---- Frame rate ----
+# PEANUTS: Unreal steps the game by elapsed time: a 3 s walk in Rail-Yard Run lands in the same place at 20, 30, 45 and 60 fps (AYN Thor, Turnip, 2026-11-22).
+# Game owned keeps the game's own 30 in menus and 60 in courses; the display-paced caps are opt-in and only the measured ones are offered.
+# t.MaxFPS and nvn.SyncInterval are not found by ue_cvar.py in this build (the names exist, the registration shape differs from DRAGON QUEST XI S).
+fps_limit_present	1
+fps_modes	20,30,45,60

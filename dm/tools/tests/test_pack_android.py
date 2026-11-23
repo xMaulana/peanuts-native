@@ -66,5 +66,47 @@ class Progress(unittest.TestCase):
             self.assertEqual(pack_android.nso_text_size(f), 0)
 
 
+# PEANUTS begin: the in-process rerun (#177)
+class Rerun(unittest.TestCase):
+    """The phone's packer allows no exec (android/ondevice/dm_pack.c): a tool that would run itself again with a variable (patch_nso.py's DM_PATCH_FRONT, #177)
+    asks run_in_process with sys.exit({'rerun_env': ...}) and is run again in process"""
+    TOOL = ("import os, sys\n"
+            "assert os.environ.get('DM_IN_PROCESS') == '1'\n"
+            "if 'DM_PATCH_FRONT' not in os.environ:\n"
+            "    print('first pass'); sys.exit({'rerun_env': {'DM_PATCH_FRONT': '0x1d0000'}})\n"
+            "print('second pass', os.environ['DM_PATCH_FRONT'])\n")
+
+    def run_tool(self, src):
+        with tempfile.TemporaryDirectory() as d:
+            tool, log = Path(d) / 'tool.py', Path(d) / 'tool.log'
+            tool.write_text(src)
+            real = os.execve
+            def no_exec(*a, **k): raise OSError('no fork or exec in the packer process (android/ONDEVICE.md)')
+            os.execve = no_exec
+            try: rc = pack_android.run_in_process(tool, [], {}, log)
+            finally: os.execve = real
+            return rc, log.read_text()
+
+    def test_rerun_with_the_asked_variable(self):
+        rc, text = self.run_tool(self.TOOL)
+        self.assertEqual(rc, 0)
+        self.assertIn('first pass', text, 'the rerun appends to the first run\'s log')
+        self.assertIn('second pass 0x1d0000', text)
+        self.assertNotIn('DM_PATCH_FRONT', os.environ)
+        self.assertNotIn('DM_IN_PROCESS', os.environ)
+
+    def test_a_tool_that_asks_again_for_the_same_fails(self):
+        rc, _ = self.run_tool("import sys\nsys.exit({'rerun_env': {'X': '1'}})\n")
+        self.assertEqual(rc, 1)
+
+    def test_patch_nso_asks_instead_of_exec_in_process(self):
+        src = (REPO / 'dm/tools/patch_nso.py').read_text()
+        at = src.index("rewriting again with {need:#x}")
+        block = src[at:at + 800]
+        self.assertLess(block.index("os.environ.get('DM_IN_PROCESS')"), block.index('os.execve'), 'in process it must ask for the rerun before any exec')
+        self.assertIn("sys.exit({'rerun_env': {'DM_PATCH_FRONT': hex(need)}})", block)
+# PEANUTS end
+
+
 if __name__ == '__main__':
     unittest.main()

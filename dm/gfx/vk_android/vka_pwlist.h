@@ -43,7 +43,7 @@ enum { VKA_PW_TOPO_MAX = 10 /* PATCH_LIST */, VKA_PW_POLY_MAX = 2 /* POINT */, V
 // A record of a file before it is used: a file from another build, a truncated or damaged one must not reach pstate_fill (an ncolor of 200 indexes past cf[8]). 0 = skipped
 static inline int vka_pw_rec_ok(const pwrec *r, const uint8_t *kb) {
     if (r->kind > VKA_PW_MESH || !r->key[0] || r->klen > sizeof(vka_gkey)) return 0;
-    if (r->kind == VKA_PW_CS) return r->klen == 0;
+    if (r->kind == VKA_PW_CS) return r->klen == 0 || r->klen == 16;   // PEANUTS: 16 = the retyped images' masks {umask, smask} (vka_pso.c cs_build); an older host skips the record
     if (r->kind == VKA_PW_MESH && (!r->key[1] || r->key[3] || r->key[4] || r->inst[0] || r->inst[1])) return 0;   // a mesh pipeline: mesh, fragment, task; never instanced
     if (r->klen < offsetof(vka_gkey, va)) return 0;
     vka_gkey k; memset(&k, 0, sizeof k); memcpy(&k, kb, r->klen);

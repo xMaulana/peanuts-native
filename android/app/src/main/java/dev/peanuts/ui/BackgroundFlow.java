@@ -25,6 +25,13 @@ public final class BackgroundFlow {
     /** A Peanuts page on bottom, under top's */
     static void field(Display t, Display b) { top = t; bottom = b; stale(); }
     static void clear() { top = null; bottom = null; }
+
+    /**
+     * A page of its own with a half on the second screen (users/Bottom: Who's playing?, the Miis, the pictures): one field while it shows, and the field from
+     * before back when it goes (the launcher's bottom screen may still show beneath it). Returns what was there, for {@link #pop}
+     */
+    public static Display[] push(Display t, Display b) { Display[] was = {top, bottom}; field(t, b); return was; }
+    public static void pop(Display[] was) { if (was != null && was[0] != null && was[1] != null) field(was[0], was[1]); else clear(); }
     static void stale() { topId = -1; bottomId = -1; }
 
     /**

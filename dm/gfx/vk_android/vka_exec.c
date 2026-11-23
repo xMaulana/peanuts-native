@@ -144,6 +144,7 @@ void mtl_set_frame(uint64_t f) {
           { void vka_drv_memo_stats(char *b, size_t n); vka_drv_memo_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb); }
           vka_memu_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb);
           { void vka_memu_stop_stats(char *b, size_t n, double frames); vka_memu_stop_stats(pb, sizeof pb, n); if (pb[0]) VLOG("%s", pb); }
+          { void vka_tbuf_stats(char *b, size_t n, double frames); vka_tbuf_stats(pb, sizeof pb, n); if (pb[0]) VLOG("%s", pb); }   // PEANUTS: texel buffer views and copies (vka_draw.c)
           { void vka_draw_unplaced(char *b, size_t n); vka_draw_unplaced(pb, sizeof pb); if (pb[0]) VRED("%s", pb); } }   // PEANUTS: draws and buffers lost to memory that is not placed, while the counts move (vka_draw.c)
         { static uint64_t fc; if (f - fc >= 1800) { vka_disp_census(f); fc = f; } }   // (every 1,800 frames)
         vka_dobj_census(f);   // DM_VK_DISP_OBJ (its own interval)
@@ -205,7 +206,7 @@ static void post(pop o) {
 // Costs: a query pool of OQ_N (a few hundred KB of driver memory), 16 more bytes per posted report, one vkGetQueryPoolResults per counted report on the completion thread.
 // The replay statistics (DM_VK_STATS) print "occlusion queries per frame: ..."
 enum { OQ_N = 16384, OQ_RB = 256 };   // queries in the ring; results read at a time
-static struct { VkQueryPool pool; int precise; PFN_vkCmdBeginQuery begin; PFN_vkCmdEndQuery end; PFN_vkResetQueryPool hreset; PFN_vkGetQueryPoolResults get; } OQ;
+static struct { VkQueryPool pool; int precise; PFN_vkResetQueryPool hreset; PFN_vkGetQueryPoolResults get; } OQ;   // PEANUTS: begin and end through vk (the encoder's query opcodes, #263)
 static int g_oq = -1;                           // 1 counted; 0 the constant 1 (DM_VK_OCCLUSION=0, no device, no host query reset or no pool); -1 not decided yet
 static int g_oq_count, g_oq_fresh, g_oq_open;   // a samples-passed reset came (draws count); a reset since the last report (its count starts from 0); a query is active in the open pass
 static uint32_t g_oq_lost;                      // draws of the segment that count 1 sample each (no query, or skipped by the replay)
@@ -221,21 +222,22 @@ static int oq_on(void) {
     VkPhysicalDeviceVulkan12Features f12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     VkPhysicalDeviceFeatures2 f2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &f12};
     vk.vkGetPhysicalDeviceFeatures2(V.pd, &f2);   // (the device was made with every feature it has: vka_dev.c)
-    OQ.begin = (PFN_vkCmdBeginQuery)vk.vkGetDeviceProcAddr(V.dev, "vkCmdBeginQuery"); OQ.end = (PFN_vkCmdEndQuery)vk.vkGetDeviceProcAddr(V.dev, "vkCmdEndQuery");
+    // PEANUTS: vkCmdBeginQuery and vkCmdEndQuery are the vk table's (vka_enc.c hooks them, #263)
     OQ.hreset = (PFN_vkResetQueryPool)vk.vkGetDeviceProcAddr(V.dev, "vkResetQueryPool"); OQ.get = (PFN_vkGetQueryPoolResults)vk.vkGetDeviceProcAddr(V.dev, "vkGetQueryPoolResults");
     PFN_vkCreateQueryPool create = (PFN_vkCreateQueryPool)vk.vkGetDeviceProcAddr(V.dev, "vkCreateQueryPool");
     if (!f12.hostQueryReset || !OQ.hreset) { VRED("occlusion queries: the device has no host query reset: every samples-passed report writes 1"); return 0; }
     OQ.precise = f2.features.occlusionQueryPrecise != 0;
     VkQueryPoolCreateInfo ci = {VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, .queryType = VK_QUERY_TYPE_OCCLUSION, .queryCount = OQ_N};
-    VkResult r = create && OQ.begin && OQ.end && OQ.get ? create(V.dev, &ci, NULL, &OQ.pool) : VK_ERROR_FEATURE_NOT_PRESENT;
+    VkResult r = create && vk.vkCmdBeginQuery && vk.vkCmdEndQuery && OQ.get ? create(V.dev, &ci, NULL, &OQ.pool) : VK_ERROR_FEATURE_NOT_PRESENT;   // PEANUTS: (#263)
     if (r) { OQ.pool = VK_NULL_HANDLE; VRED("occlusion queries: no query pool (%d): every samples-passed report writes 1", r); return 0; }
     OQ.hreset(V.dev, OQ.pool, 0, OQ_N); atomic_store(&g_oq_ready, OQ_N);
     VLOG("occlusion queries: counted on the GPU (%s; a ring of %d; DM_VK_OCCLUSION=0: the constant 1)", OQ.precise ? "precise counts" : "not precise: a nonzero count for any sample", OQ_N);
     return g_oq = 1;
 }
-typedef struct { VkCommandBuffer cb; uint32_t q, end; } oq_arg;
-static void oq_cmd(const void *a) { oq_arg w; memcpy(&w, a, sizeof w); if (w.end) OQ.end(w.cb, OQ.pool, w.q); else OQ.begin(w.cb, OQ.pool, w.q, OQ.precise ? VK_QUERY_CONTROL_PRECISE_BIT : 0); }
-static void oq_rec(uint32_t q, uint32_t end) { oq_arg w = {g_cb, q, end}; if (!vka_enc_call(oq_cmd, &w, sizeof w)) oq_cmd(&w); }   // in order with the encoder's calls
+static void oq_rec(uint32_t q, uint32_t end) {   // PEANUTS: in order with the encoder's calls: its query opcodes (#263)
+    if (end) vk.vkCmdEndQuery(g_cb, OQ.pool, q);
+    else vk.vkCmdBeginQuery(g_cb, OQ.pool, q, OQ.precise ? VK_QUERY_CONTROL_PRECISE_BIT : 0);
+}
 static void oq_close(void) { if (g_oq_open) { g_oq_open = 0; oq_rec((uint32_t)((g_oq_head - 1) % OQ_N), 1); vka_draw_run_break(); } }   // (an instanced run is not extended past the query)
 void vka_oq_pass_end(void) { oq_close(); }   // vka_draw.c: the pass ends, or a clear is recorded inside it
 void vka_oq_draw(void) {   // vka_draw.c: a draw about to be recorded in the open pass; while counting, the pass's first draw (or the first after a report or a clear) begins a query
@@ -524,7 +526,7 @@ static void sh_save(unsigned slot) {   // the slot's last use is done: its segme
 }
 static int g_sub_cont;
 void vka_rp_sub_cont(int on) { g_sub_cont = on != 0; }
-void vka_rp_sub_begin(void) {
+void vka_rp_sub_begin(uint64_t reserved) {   // PEANUTS: known before texture prepare, not only when replaying the first handle
     int cont = g_sub_cont; g_sub_cont = 0;
     uint64_t tb0 = now_ns();
     vka_perf_thread(0); vka_ctl_sub();
@@ -576,17 +578,21 @@ void vka_rp_sub_begin(void) {
     vka_gp_sub_begin(g_cb, g_frame);
     vka_enc_start(g_cb);
     vka_barrier(g_cb);   // the host's writes to guest memory before this submission (made available by the submit), and earlier submissions' writes
-    if (!cont) { uint64_t tp0 = now_ns(); vka_tex_prepare(g_cb); g_t_prep += now_ns() - tp0;
+    if (!cont) { uint64_t tp0 = now_ns(); vka_tex_prepare(g_cb, reserved ? reserved : vka_fence_last() + 1); g_t_prep += now_ns() - tp0;   // PEANUTS: inline submits are serialized; their commit takes the next fence
                  vka_barrier(g_cb); }   // the re-uploads of CPU-written textures before the submission's draws read them
     vka_draw_sub_begin(g_cb, k);
     { void vka_pso_pause(int on); vka_pso_pause(0); }   // the game submits: resumed (mtl_drain paused the pipeline threads)
-    g_chunk_draws = VKA_ENV("DM_VK_CHUNK", 600);   // live: from the next submission
+    // PEANUTS: 150 (was 600; with DM_VK_CHUNK_PASS 150): the GPU waits for the first part while the rest is recorded, and a game that submits frame N+1 only after frame
+    // N's GPU work (Breath of the Wild) leaves it idle that long every frame; the GPU then also ran under the clock governor's step-up (81 % busy at 550-615 MHz). Breath of
+    // the Wild's field on the Thor (Turnip): 47.2 -> 52.5 fps, head 3.4 -> 1.9 ms, GPU clock 615 -> 680 MHz; 64 for the in-pass split was worse (39 fps), 100 and 250 a
+    // little worse than 150 (2026-11-21)
+    g_chunk_draws = VKA_ENV("DM_VK_CHUNK", 150);   // live: from the next submission
     g_nx = 0; g_chunk_d0 = g_stat_draws;
     g_t_begin += now_ns() - tb0;
 }
 
 // A long submission goes to the queue in parts, so the GPU starts on its first passes while the rest is recorded: before the first pass after DM_VK_CHUNK draws (default
-// 600; 0 = one part) of the part in progress, the part is ended and submitted without a signal, and the submission goes on in the slot's next command buffer. The parts run
+// 150, PEANUTS: was 600; 0 = one part) of the part in progress, the part is ended and submitted without a signal, and the submission goes on in the slot's next command buffer. The parts run
 // in order on the one queue, and the barriers recorded in a part cover what later parts do (submission order); only the last part signals the submission's fence.
 // On the Adreno 840 phone, Donkey Kong Bananza's level recorded ~45 ms a frame before its GPU work (~30 ms) began, and the game waited for that frame's fence (@sync_ms ~64)
 typedef struct { VkCommandBuffer cb; uint32_t q; uint64_t gate; } part_arg;   // q: the part's bottom (part_submit) or top (part_begin) timestamp query, UINT32_MAX = none; gate: see g_gate_next
@@ -649,7 +655,10 @@ static void chunk(void) {
     vka_draw_cb_switch(g_cb); vka_gp_part(g_cb);
     g_chunk_d0 = g_stat_draws; g_n_chunks++;
 }
-// DM_VK_CHUNK_PASS=n (live; default 600, 0 = off): a pass that has had n draws in the part in progress is also ended there and the part submitted; the next draw opens it again over the
+// PEANUTS: DM_VK_CHUNK_PASS's default, on its own line to change after a wider comparison: 150 since 2026-11-21 (was 600), measured only on Breath of the Wild with
+// Turnip (see DM_VK_CHUNK above). Each in-pass split ends the pass and opens it again with loadOp LOAD, a store and a load of its targets on a tiler, in every game
+#define VKA_CHUNK_PASS_DEFAULT 150   // PEANUTS: DM_VK_CHUNK_PASS default
+// DM_VK_CHUNK_PASS=n (live; default VKA_CHUNK_PASS_DEFAULT, 0 = off): a pass that has had n draws in the part in progress is also ended there and the part submitted; the next draw opens it again over the
 // same targets (loadOp LOAD, after the pass end's barrier), so its contents and the draws' order are kept. A pass of 1,700 draws whose GPU work (14-18 ms) only began after
 // all of it was recorded then starts on the GPU while the rest is recorded. Donkey Kong Bananza's level (Adreno 840, DM_VK_GPUPROF): the extra splits cost no measurable GPU
 // time (20.2-20.5 ms a frame with them, 20.8-21.0 without); with the GPU clock floor the GPU finished 6-10 ms after recording instead of 10-33
@@ -665,7 +674,7 @@ static inline void chunk_check(void) {
     if (!g_cb || g_nx >= NCHUNK) return;   // no part left: chunk() would do nothing and leave the draw count, so every later draw would end its pass
     uint64_t in = g_stat_draws - g_chunk_d0;
     if (g_chunk_draws > 0 && in >= (uint64_t)g_chunk_draws && vka_rp_split_ok(&S.rt, S.has_rt)) { vka_rp_end(); chunk(); return; }
-    int cp = VKA_ENV("DM_VK_CHUNK_PASS", 600);
+    int cp = VKA_ENV("DM_VK_CHUNK_PASS", VKA_CHUNK_PASS_DEFAULT);   // PEANUTS: the default above
     if (cp > 0 && in >= (uint64_t)cp && vka_rp_open_for(&S.rt, S.has_rt)) {
         uint32_t w = 0, h = 0; int dep = vka_rp_depth(&w, &h);
         if ((uint64_t)w * h >= (16ull << 20)) return;   // a 6400x6400 ink map costs ~400 MB to store and load on a tiler: never split it mid-pass for chunking
@@ -1028,7 +1037,7 @@ static VkImageAspectFlags copy_aspect(const vka_img *im, const char *what) {
 // Buffer ↔ texture: c->src is the buffer's guest address. Rows are SetCopyRowStride bytes apart (tightly packed without it), layers / slices SetCopyImageStride
 static void copy_bt(const p_copy_b2t *c, int to_tex) {
     if (!c->tex) return;
-    vka_img *im = vka_tex_get(c->tex, g_cb);
+    vka_img *im = to_tex ? vka_tex_get(c->tex, g_cb) : vka_tex_get_src(c->tex, g_cb);   // PEANUTS: a texture → buffer copy reads it (vka_tex_get_src)
     if (!im) return;
     if (to_tex) vka_tex_own(im, g_cb);
     // PEANUTS: DM_RES_SCALE: the buffer's texels are the texture's size, so a scaled image is made 1x first (and its shape stays 1x: vka_resscale.inc)
@@ -1179,7 +1188,7 @@ static int t2t_depth_draw(vka_img *s, vka_img *d, VkImageSubresourceLayers ss, V
 }
 static void copy_t2t(const p_copy_t2t *c) {
     if (!c->src || !c->dst) return;
-    vka_img *s = vka_tex_get(c->src, g_cb), *d = vka_tex_get(c->dst, g_cb);
+    vka_img *s = vka_tex_get_src(c->src, g_cb), *d = vka_tex_get(c->dst, g_cb);   // PEANUTS: the source is read (vka_tex_get_src)
     if (!s || !d) return;
     vka_tex_own(d, g_cb);
     // PEANUTS: the copy goes by the formats of the two textures the game named, not by their images'. A texture may be a view of an image of another format (textures of
@@ -1237,6 +1246,8 @@ static void copy_t2t(const p_copy_t2t *c) {
         static _Atomic int noted_; if (tsf.vk != tdf.vk && !atomic_exchange(&noted_, 1)) VLOG("texture copy between formats of one size, %#x → %#x (Vulkan %u → %u): copied as bits, not converted", c->src->d.format, c->dst->d.format, s->f.vk, d->f.vk);   // PEANUTS: tsf / tdf (above)
         VkImageCopy r = {ss, {c->sr.xoffset, c->sr.yoffset, s3 ? c->sr.zoffset : 0}, ds, {c->dr.xoffset, c->dr.yoffset, d3 ? c->dr.zoffset : 0}, {(uint32_t)c->sr.width, (uint32_t)c->sr.height, s3 ? (uint32_t)nz : 1}};
         vk.vkCmdCopyImage(g_cb, s->img, VK_IMAGE_LAYOUT_GENERAL, d->img, VK_IMAGE_LAYOUT_GENERAL, 1, &r);
+        // PEANUTS(upstream-candidate): a copy mirrored into storage is not a GPU-only write to the destination.
+        if (vka_tex_mirror_mip(c, s, d)) { g_stat_ops++; vka_barrier(g_cb); return; }
     } else {   // a scaled, mirrored or format-changing copy: a blit (filtered with LINEAR_FILTER), or a draw into a depth format that is no blit destination (vka_t2tpath.h)
         // PEANUTS: the format the blit writes, which is asked for BLIT_DST: the destination's image, or the scratch image of the destination texture's format the copy
         // goes through below (a texture whose image has another format, or an sRGB destination of a linear source: sconv_image, one layer of a 2D colour texture)
@@ -1651,8 +1662,8 @@ void vka_event_replayed(volatile uint32_t *w, uint32_t mode, uint32_t v);
 static qs_cont *g_pk;
 // A later record of an indirect-count multi-draw that its first record makes whole (vka_draw.c vka_mdi_gpu): nothing of its own to record
 static int mdi_rest(uint32_t op, const void *a, uint32_t size) {   // (a multi-draw's record is always whole: hle_nvn.c rec_draw; a plain draw's stops before ind)
-    if (op == OP_DRAW) { if (size - 8 < sizeof(p_draw)) return 0; const p_draw *d = a; return d->mdi_cnt && d->mdi_i > 0 && d->prim != NVN_PRIM_MESH && vka_mdi_gpu(0, d->mdi_n, d->mdi_stride); }
-    if (op == OP_DRAW_IDX) { if (size - 8 < sizeof(p_draw_idx)) return 0; const p_draw_idx *d = a; return d->mdi_cnt && d->mdi_i > 0 && vka_mdi_gpu(1, d->mdi_n, d->mdi_stride); }
+    if (op == OP_DRAW) { if (size - 8 < sizeof(p_draw)) return 0; const p_draw *d = a; return d->mdi_cnt && d->mdi_i > 0 && vka_mdi_gpu(0, d->prim, d->mdi_n, d->mdi_stride); }   // PEANUTS: bounded draw ranges
+    if (op == OP_DRAW_IDX) { if (size - 8 < sizeof(p_draw_idx)) return 0; const p_draw_idx *d = a; return d->mdi_cnt && d->mdi_i > 0 && vka_mdi_gpu(1, d->prim, d->mdi_n, d->mdi_stride); }
     return 0;
 }
 static int exec(const uint8_t *p, int depth) {   // 1: parked at a wait (g_pk holds where it goes on)

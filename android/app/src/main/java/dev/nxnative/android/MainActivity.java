@@ -74,10 +74,12 @@ public final class MainActivity extends Activity {
             bananas.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK);
             if (poppedText != null) poppedText.setText(poppedLine(n));
         });
+        dev.peanuts.ui.BottomScreen.onPop(this, () -> { long n = Prefs.addBananaPopped(this); if (poppedText != null) poppedText.setText(poppedLine(n)); });   // PEANUTS: a peanut popped on the bottom screen counts as these do (dev.peanuts.ui.BottomPanel; its own tick)
         setContentView(frame);
         PadFocus.watch(getWindow());   // a controller: the focus frame (PadFocus)
         build();
-        if (saved == null) { setIntent(gated(getIntent())); fromIntent(getIntent()); dev.peanuts.GameReturn.back(this, getIntent()); /* PEANUTS: Home made anew by the app's icon while a game runs (GameReturn) */ }   // start() reads no_pause from getIntent() too
+        if (!onHome()) dev.peanuts.ui.PagePlace.restore(saved, pageScroll());   // PEANUTS: made again (a fold, dark mode, Android ended the process): the page where it was (dev.peanuts.ui.PagePlace)
+        if (saved == null) { setIntent(gated(getIntent())); fromIntent(getIntent()); if (!dev.peanuts.GameReturn.back(this, getIntent())) dev.peanuts.users.WhoPlaysActivity.appOpened(this, getIntent()); /* PEANUTS: Home made anew by the app's icon while a game runs (GameReturn); else, opened by the icon, "Who's playing?" first with two users or more (dev.peanuts.users) */ }   // start() reads no_pause from getIntent() too
         GpuGl.probe(this, () -> { if (!isFinishing() && settingsGame != null) gameSettingsAgain(); });   // the GPU's name and, before any readiness check, the system driver's facts for the recommendations
         Updater.onStart(this);   // the release app: a newer release on GitHub opens the update popup (once per process start: not on a resume or a rotation)
         dev.peanuts.ctl.Ctl.attach(this);   // PEANUTS: control commands that waited for this screen run now (they come from dev.peanuts.ctl's own queue, never from this intent)
@@ -87,14 +89,17 @@ public final class MainActivity extends Activity {
         super.onSaveInstanceState(out);
         out.putBoolean("settings", settingsPage);
         if (settingsGame != null) out.putString("game_settings", settingsGame.gameDir);
+        if (!onHome()) dev.peanuts.ui.PagePlace.save(out, pageScroll(), advancedOpen);   // PEANUTS: the page's scroll position and focused row (dev.peanuts.ui.PagePlace)
     }
 
     /** Rotation, a window resize: the same page again */
     @Override public void onConfigurationChanged(Configuration c) {
         super.onConfigurationChanged(c);
         int y = settingsGame != null ? scrollY() : 0;
+        dev.peanuts.ui.PagePlace place = onHome() ? null : dev.peanuts.ui.PagePlace.of(pageScroll());   // PEANUTS: Settings and Advanced keep their place too, and every page its focused row (dev.peanuts.ui.PagePlace)
         build();
         if (settingsGame != null) scrollTo(y);
+        if (place != null) place.restore(pageScroll());   // PEANUTS
         if (resumed) { onResumeViews(); if (onHome()) Ondevice.resume(this); }
     }
 
@@ -107,12 +112,14 @@ public final class MainActivity extends Activity {
         advancedOpen = true;
         advancedTitleId = titleId;
         advancedName = name;
+        dev.peanuts.ui.PagePlace.cover(pageScroll());   // PEANUTS: where the page under Advanced is, for Back (dev.peanuts.ui.PagePlace)
         build();
     }
 
     private void closeAdvanced() {
         advancedOpen = false;
         build();
+        dev.peanuts.ui.PagePlace.uncover(pageScroll());   // PEANUTS: the page back where it was when Advanced opened
         if (resumed) onResumeViews();
     }
 
@@ -185,6 +192,7 @@ public final class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     @Override public void onBackPressed() {
         if (ReleasePage.back(this)) return;   // the release page over Home
+        if (dev.peanuts.ui.SettingsPage.onBack(this)) return;   // PEANUTS: a tablet's Settings: from a section's page back to the tiles of the sections (dev.peanuts.ui.SettingsPage)
         if (advancedOpen) closeAdvanced();
         else if (settingsPage || settingsGame != null) page(false);
         else super.onBackPressed();
@@ -267,6 +275,9 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.setMarginStart(Ui.dp(this, 10));
         row.addView(settings, lp);
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        mp.setMarginStart(Ui.dp(this, 10));
+        row.addView(dev.peanuts.users.ProfileButton.make(this, () -> page(true)), mp);   // the user playing now, with two users or more: Profile and switching (dev.peanuts.users)
         return row;
     }
     // PEANUTS end
@@ -282,7 +293,7 @@ public final class MainActivity extends Activity {
         trailing.addView(dev.peanuts.ui.Library.screensOffButton(this), sop);
         trailing.addView(headerButtons());
         // PEANUTS end
-        content.addView(Ui.header(this, Ui.badge(this, 44), "Peanuts Native", Prefs.buildId(), trailing));   // the build identifier under the title (Prefs.buildId, the part of the overlay's build tag after the app's name), so a screenshot of Home names its build; Settings › About has the full tag   // PEANUTS: rebrand
+        content.addView(dev.peanuts.ui.Library.homeHeader(Ui.header(this, Ui.badge(this, 44), "Peanuts Native", Prefs.buildId(), trailing)));   // the build identifier under the title (Prefs.buildId, the part of the overlay's build tag after the app's name), so a screenshot of Home names its build; Settings › About has the full tag   // PEANUTS: rebrand; homeHeader: the build line is no focus stop
         dev.peanuts.ui.BottomScreen.home(this, () -> page(true));   // PEANUTS: bottom screen (dev.peanuts.ui.BottomScreen)
         accessCard = accessCard();
         Ui.add(content, accessCard, 16);
@@ -451,6 +462,7 @@ public final class MainActivity extends Activity {
         t.setTextIsSelectable(true);
         Ui.add(about, t, 10);
         refreshSettings();
+        dev.peanuts.ui.SettingsPage.lay(this, content);   // PEANUTS: these rows in ten sections, one shown: a sidebar of them on a wide window, a drawer on a phone (dev.peanuts.ui.SettingsPage)
     }
 
     /** A settings group's card of rows, under its section label */
@@ -929,10 +941,10 @@ public final class MainActivity extends Activity {
         pack.addView(new Ui.Setting(this, "📁", "Folders", v -> Folders.dialog(this, g)).value("Game, pack and save folders").chevron(this).view);
         Ui.add(content, Ui.section(this, "More"), 16);
         LinearLayout more = Ui.add(content, Ui.listCard(this), 6);
+        CharSequence played = dev.peanuts.launch.PlayTime.line(this, g.titleId); if (played != null) more.addView(new Ui.Setting(this, "⏱️", "Played", null).value(played).view);   // PEANUTS: total play time (dev.peanuts.launch.PlayTime)
         if (noProfile == null && Shortcuts.supported(this))
             more.addView(new Ui.Setting(this, "🏠", "Add to home screen", v -> Shortcuts.pin(this, g)).value("A shortcut that starts this game").chevron(this).view);
-        more.addView(new Ui.Setting(this, "📨", "Share log", v -> shareLog(g.titleId)).value("This game's newest log").chevron(this).view);
-        more.addView(new Ui.Setting(this, "🧾", "Share build log", v -> dev.peanuts.ui.BuildLogUi.share(this, g.titleId, g.name)).value("Logs of this game's build, in one .zip").chevron(this).view);   // PEANUTS: Share build log
+        more.addView(new Ui.Setting(this, "📨", "Share log…", v -> dev.peanuts.ui.BuildLogUi.shareLog(this, g.titleId, g.name, null, () -> shareLog(g.titleId))).value("This game's newest run or build").chevron(this).view);   // PEANUTS: one row asks which (dev.peanuts.ui.BuildLogUi.shareLog; upstream: Share log, shareLog(g.titleId))
         String lp = Pack.libraryProblem(new File(g.packDir), g.titleId);
         File save = Folders.save(this, g);
         Ui.Details info = Ui.details(this, "Title ID: " + g.titleId + "\nGame: " + (PickedNup.is(this, g.gameDir) ? new File(g.gameDir).getName() + " (.nup used where it is, picked with the file picker)"

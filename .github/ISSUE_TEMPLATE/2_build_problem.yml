@@ -86,6 +86,7 @@ body:
         - "DAVE THE DIVER 1.0.6.1267 (010097F018538000)"
         - "Demon Slayer -Kimetsu no Yaiba- The Hinokami Chronicles 2 1.80 (0100AD80208A8000)"
         - "Diablo III: Eternal Collection 2.7.7.92380 (01001B300B9BE000)"
+        - "Digimon Story Time Stranger 1.2.2 (010062E01FE0C000)"
         - "Double Dragon Revive N1.10 (01006AE02236C000)"
         - "Double Dragon Revive 1.0.0 (01006AE02236C000)"
         - "DRAGON BALL Z: KAKAROT + A NEW POWER AWAKENS SET 1.70 (010051C0134F8000)"
@@ -96,6 +97,7 @@ body:
         - "FINAL FANTASY RESONANCE 1.0.1 (0100606026F12000)"
         - "Fire Emblem Engage 2.0.0 (0100A6301214E000)"
         - "Fire Emblem: Three Houses 1.2.0 (010055D009F78000)"
+        - "Hogwarts Legacy 1.0.5 (0100F7E00C70E000)"
         - "Hyrule Warriors: Age of Calamity 1.3.0 (01002B00111A2000)"
         - "Kirby and the Forgotten Land 1.1.0 (01004D300C5AE000)"
         - "Kirby's Return to Dream Land Deluxe 1.0.0 (01006B601380E000)"
@@ -105,6 +107,7 @@ body:
         - "Metroid Dread 2.1.0 (010093801237C000)"
         - "Monster Sanctuary 2.1.0 (0100A0F00DA68000)"
         - "My Time at Sandrock 1.4.2.0 (0100B63016916000)"
+        - "New Pokémon Snap update v0 (0100F4300BF2C000)"
         - "NieR:Automata The End of YoRHa Edition (Asian release) 1.0.3 (0100B8E016F76000)"
         - "OCTOPATH TRAVELER 0 1.0.5 (01005270232F2000)"
         - "Persona 5 Royal 1.0.2 (01005CA01580E000)"
@@ -117,12 +120,14 @@ body:
         - "Pokémon Sword 1.3.2 (0100ABF008968000)"
         - "Pokémon Violet 4.0.0 (01008F6008C5E000)"
         - "Resident Evil 4 v131072 (010099A00BC1E000)"
+        - "Star Ocean The Second Story R 1.1.0 (010065301A2E0000)"
         - "STEINS;GATE RE:BOOT 1.0.4 (01008BC024FDE000)"
         - "STEINS;GATE RE:BOOT 1.0.3 (01008BC024FDE000)"
         - "STORY OF SEASONS: Grand Bazaar update v655360 (0100DAE01E4C8000)"
         - "Super Mario 3D World + Bowser's Fury 1.2.2 (010028600EBDA000)"
         - "Super Mario Bros. Wonder 1.2.1 (010015100B514000)"
         - "Super Mario Odyssey 1.4.1 (0100000000010000)"
+        - "Tetris Effect: Connected 2.0.2.2 (0100DE501433A000)"
         - "The Legend of Zelda: Breath of the Wild 1.9.0 (01007EF00011E000)"
         - "The Legend of Zelda: Breath of the Wild 1.6.0 (01007EF00011E000)"
         - "The Legend of Zelda: Echoes of Wisdom 1.1.0 (01008CF01BAAC000)"
@@ -130,10 +135,12 @@ body:
         - "The Legend of Zelda: Skyward Sword HD 1.0.1 (01002DA013484000)"
         - "The Legend of Zelda: Tears of the Kingdom 1.4.3 (0100F2C0115B6000)"
         - "Tomodachi Life: Living the Dream 1.0.4 (010051F0207B2000)"
+        - "Trails in the Sky 1st Chapter 1.0.7 (01002C9022770000)"
         - "Trails in the Sky 2nd Chapter 1.0.3 (01007A2027548000)"
         - "Unicorn Overlord 1.05 (010069401ADB8000)"
         - "Xenoblade Chronicles X: Definitive Edition 1.0.2 (0100453019AA8000)"
         - "Yoru, Tomosu base game (0100C2901153C000)"
+        - "Yoshi's Crafted World 1.0.1 (01006000040C2000)"
         - "One of these games, but another update or the base game (say which below)"
         - "Another game (say which below)"
     validations:
@@ -210,10 +217,10 @@ body:
       label: "Peanuts Native version"
       description: "Settings › About shows it. In an older version, please try the newest first: many problems are fixed there."
       options:
-        - "0.1.6 (the newest)"
+        - "0.1.7 (the newest)"
+        - "0.1.6"
         - "0.1.5"
-        - "0.1.4"
-        - "0.1.3 or older"
+        - "0.1.4 or older"
         - "A test or development build (say which in \"Anything else\")"
     validations:
       required: true
@@ -309,7 +316,7 @@ body:
     attributes:
       label: "Build log"
       description: |
-        Tap **Share build log** on the game's card on Home (it shows while a build has stopped or failed), on the Prepare card, or hold the game's cover › **Storage** › **Share build log**; then **Save to a folder**, and drag that .zip into this box as it is.
+        Tap **Share log** on the game's card on Home (it shows while a build has stopped or failed), on the Prepare card, or hold the game's cover › **Storage** › **Share log…**, and pick **Newest build** when it asks; then **Save to a folder**, and drag that .zip into this box as it is.
         It holds the build's own log, its step logs, the job's state and a summary (the app, the device, memory, free space, and why Android ended the app if it did). Never keys, game files, `.nup` files or saves. If you tried again since, that is fine: the log keeps the recent tries one after the other.
       placeholder: "Drag the build log .zip here"
     validations:

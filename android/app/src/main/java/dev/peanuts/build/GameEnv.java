@@ -57,9 +57,11 @@ public final class GameEnv {
                 Log.w(TAG, "env " + titleId + ": " + e);
             }
         }
-        try {   // the player's own Miis (Settings › Miis): games list them as the console's; independent of the fonts
+        try {   // the player's own Miis (Settings › Users › Miis): games list them as the console's; independent of the fonts
             String env = Upstream.gameEnv(c, titleId);
             String out = withDefault(env, "DM_MII_DB", dev.peanuts.mii.MiiStore.database(c.getFilesDir()).getPath());
+            File pics = dev.peanuts.users.UserImages.dir(c);   // the users' pictures, which a game asks the console for (hle_account.c LoadProfileImage); not tied to the fonts
+            if (pics.isDirectory()) out = withDefault(out, "DM_USER_IMAGES", pics.getPath());
             if (!out.equals(env == null ? "" : env)) { Upstream.gameEnv(c, titleId, out); Log.i(TAG, "env " + titleId + ": DM_MII_DB set"); }
         } catch (ReflectiveOperationException e) {
             Log.w(TAG, "env " + titleId + ": " + e);

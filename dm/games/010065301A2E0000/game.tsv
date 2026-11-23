@@ -1,0 +1,47 @@
+# Game profile of STAR OCEAN THE SECOND STORY R (Switch, update 1.1.0 = v196608)
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Format: see dm/games/README.md
+# Unity 2021.3.22f1 (IL2CPP) with CRIWARE and FMOD, SDK 15.3.2; subsdk0 is the movie module (the cinematics are CRI USM files in StreamingAssets).
+# The shaders are Unity's Shader and ComputeShader objects in Data/data.unity3d and the StreamingAssets bundles, read by unityfs.py (23,465 of 23,476; 11 are the player's GLSLC outputs in main).
+# Memory: My Time at Sandrock's reserve and alias (the survey's 4.375 GiB alias ran out of address space at boot on the Thor) and the standard pool.
+
+# ---- Identity ----
+title_id	010065301A2E0000
+program_id	010065301A2E0000
+
+# ---- App ----
+name	STAR OCEAN THE SECOND STORY R
+ipa	StarOceanTheSecondStoryR.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v196608	1.1.0	main=d214ba64d902aeda4197b57debabd01b	subsdk0=368f01d5cb42f06cd125dc739d036719	sdk=8618895246b420329b77746b960a66ab
+package	v196608
+shader_versions	v196608
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	Data/data.unity3d
+zip_store	.awb:.dat:.unity3d:.usm:.metallib
+
+# ---- Memory ----
+# 8 GiB reserved, 7.375 GiB alias (My Time at Sandrock's): the survey's 4.375 GiB alias ran out of address space ~35 s into boot (mapped up to +4.26 GB),
+# Unity got an empty address region and wrote at NULL + 0x3fffe0 (main+0x2d9830), or hung on a black screen; with this alias the peak is +4.75 GB
+mem_reserve	0x200000000
+mem_alias	0x1d8000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 16 MB of system resource
+sys_resource	0x1000000
+
+# ---- Shader split ----
+shader_groups	/Data/=data
+shader_note	STAR OCEAN THE SECOND STORY R shaders
+
+# ---- Frame rate ----
+# PEANUTS: Unity steps the game by elapsed time: a 3 s walk from the Milokeenia autosave lands in the same place at the game's own 30 and display-paced 20 and 60 fps
+# (AYN Thor, Turnip, 2026-11-22; 59 fps in that scene at the 60 cap). FPSLocker Warehouse lists this exact main (D214BA64D902AEDA, 1.1.0) as needing no patch.
+# Game owned keeps the Switch's 30; the display-paced caps are opt-in and only the measured ones are offered.
+fps_limit_present	1
+fps_modes	20,30,60

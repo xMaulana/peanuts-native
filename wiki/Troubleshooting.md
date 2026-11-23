@@ -9,7 +9,7 @@ Settings > **Readiness check** checks Android, memory, file access, storage, the
 ## Share a log
 
 Each game start writes a log.
-
+- The game's ... button > **Storage** > **Share log…**: that game's newest run, or its build when it has one (you choose). <!-- PEANUTS: one row for the run and the build (BuildLogUi.shareLog) -->
 - The game's ... button > **Storage** > **Share log**: that game's newest log.
 - On the game's **Storage** tab, **Share build log** collects the preparation logs into a ZIP. Choose **Share** or **Save to a folder**.
 - In Settings, **Share log** opens the newest game log. When a build log is newer, you can choose the run or the build. <!-- PEANUTS: BuildLogUi.shareLog -->

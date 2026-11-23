@@ -13,7 +13,6 @@ import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 import dev.peanuts.GameReturn;
@@ -234,6 +233,7 @@ public final class Ctl {
                     g.put("tab", Up.tab());
                     m.put("game_page", g);
                 }
+                if (page.equals("settings")) m.put("settings_section", dev.peanuts.ui.SettingsPage.current());   // the section that shows (dev.peanuts.ui.SettingsPage)
             } catch (ReflectiveOperationException | RuntimeException e) {
                 m.put("page", null);
             }
@@ -380,6 +380,7 @@ public final class Ctl {
                 case "scan": scan(a, res); break;
                 case "build": build(a, res, r.titleId(true), false); break;
                 case "reimport": reimport(a, r, res); break;
+                case "import_pack": importPack(a, r, res); break;
                 case "prepare": prepare(a, r, res); break;
                 case "play": play(a, r, res); break;
                 case "job": job(a, r, res); break;
@@ -411,8 +412,9 @@ public final class Ctl {
         } else if (to.equals("settings")) {
             Up.page(a, true);
             String section = r.str("section");
-            if (section != null && !scrollTo(a, section)) throw new Request.Bad("no_section", "Settings is open, but it has no heading \"" + section + "\".");
-            res.ok(null).put("page", "settings");
+            if (section != null && !dev.peanuts.ui.SettingsPage.go(a, section))
+                throw new Request.Bad("no_section", "Settings is open, but it has no section \"" + section + "\". Its sections: " + String.join(", ", dev.peanuts.ui.SettingsSections.names()) + ".");
+            res.ok(null).put("page", "settings").put("section", dev.peanuts.ui.SettingsPage.current());
         } else {
             String id = r.titleId(true), tab = r.word("tab", Request.TABS);
             Up.Game g = Up.game(a, id);
@@ -422,30 +424,6 @@ public final class Ctl {
             Up.openGame(a, g.raw, tab);
             res.ok(null).put("page", "game").put("title_id", g.titleId).put("tab", Up.tab());
         }
-    }
-
-    /** Settings is one scrolling page: the heading with this text (Library, Updates, Display, Controls, Performance and picture, System, Help, About) is scrolled to the top */
-    private static boolean scrollTo(Activity a, String heading) {
-        TextView t = findText(a.getWindow().getDecorView(), heading);
-        if (t == null) return false;
-        View v = t;
-        while (v != null && !(v instanceof ScrollView)) v = v.getParent() instanceof View ? (View) v.getParent() : null;
-        ScrollView sv = (ScrollView) v;
-        if (sv != null) sv.post(() -> {
-            android.graphics.Rect rect = new android.graphics.Rect(0, 0, t.getWidth(), t.getHeight());
-            sv.offsetDescendantRectToMyCoords(t, rect);
-            sv.scrollTo(0, Math.max(0, rect.top));
-        });
-        return true;
-    }
-
-    private static TextView findText(View v, String text) {
-        if (v instanceof TextView && !(v instanceof Button) && text.equalsIgnoreCase(String.valueOf(((TextView) v).getText()).trim())) return (TextView) v;
-        if (v instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) v).getChildCount(); i++) {
-            TextView t = findText(((ViewGroup) v).getChildAt(i), text);
-            if (t != null) return t;
-        }
-        return null;
     }
 
     private static void scan(Activity a, Result res) throws Request.Bad, ReflectiveOperationException {
@@ -484,6 +462,21 @@ public final class Ctl {
         if (CtlPort.building(a, id)) { res.ok("The import started: the old .nup is replaced when the new one is complete, then the game is built. Its progress is under \"build\"."); return; }
         buildWait = res;
         UI.postDelayed(() -> { if (buildWait == res) { buildWait = null; done(res.fail("refused", "The import did not start.")); } }, 1000);
+    }
+
+    /**
+     * The game sheet's Import pack… without the picker (GitHub issue #44): the pack (a .zip made by Export pack…, or a pack folder) for a game that is not built
+     * yet, with the same checks and dialogs. Pending while it is imported; then ok with what the "Pack imported" dialog says, or refused with its sentence
+     */
+    private static void importPack(Activity a, Request r, Result res) throws Request.Bad, ReflectiveOperationException {
+        String id = r.titleId(true);
+        home(a);
+        String[] no = CtlPort.importPack(a, id, r.need("path"), out -> {
+            if (out[0] == null) res.ok(out[1]);
+            else res.fail(out[0], out[1]);
+            done(res);
+        });
+        if (no != null) throw new Request.Bad(no[0], no[1]);
     }
 
     private static void watch() { dialog = null; watching = true; }

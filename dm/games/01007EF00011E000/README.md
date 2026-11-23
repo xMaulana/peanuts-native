@@ -214,6 +214,8 @@ Before publishing, the fixes were integrated with main's pipeline archive and GP
 
 ## Found on this game
 
+- PEANUTS, Android: [A pass sampling its own attachment in tile memory (Android, Turnip)](../../../docs/reference/rendering.md#a-pass-sampling-its-own-attachment-in-tile-memory-android-turnip): shrine pictures players fixed with `TU_DEBUG=sysmem`; the passes that sample their own target are now announced as feedback loops, so Turnip renders only those in system memory (no GPU time measured against it in the Shrine of Resurrection).
+
 - PEANUTS(upstream-candidate), Android: [Upsample pass reading the level above the one it renders (Android)](../../../docs/reference/rendering.md#upsample-pass-reading-the-level-above-the-one-it-renders-android): the Sheikah glow (the pedestal in the Shrine of Resurrection) low-resolution and blocky on 1.6.0, Peanuts Native GitHub issue #170.
 
 - PEANUTS, Android: [Desired present times chosen before GPU and queue waits](../../../docs/reference/frame-rate.md#desired-present-times-chosen-before-gpu-and-queue-waits-android): stale deadlines and misleading on-time counts are corrected at submission; subsequent outdoor tests still show short/long presentation pairs.

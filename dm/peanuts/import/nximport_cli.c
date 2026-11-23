@@ -1,7 +1,8 @@
 // nximport_cli — a test driver for libnximport (not shipped in the APK).
 //   nximport_cli [--keys prod.keys] probe <nsp|xci|nsz|xcz>...
 //   nximport_cli [--keys prod.keys] icon <nsp|xci|nsz|xcz> <title id|-> <out.png>
-//   nximport_cli [--keys prod.keys] nup <out.nup> <base title id> <nsp|xci|nsz|xcz>...   (Ctrl-C stops it: no .nup, nothing left behind)
+//   nximport_cli [--keys prod.keys] nup [--keep-base] <out.nup> <base title id> <nsp|xci|nsz|xcz>...   (Ctrl-C stops it: no .nup, nothing left behind;
+//     --keep-base also writes the base package when an update carries the whole game)
 //   nximport_cli [--keys prod.keys] check <nsz|xcz>...  (every NCZ rebuilt and checked against its name and its CNMT; nothing is written)
 //   nximport_cli [--keys prod.keys] fonts <firmware dir> <out dir>
 //   nximport_cli verify <file.nup>                 (lists every entry: size, offset, codec)
@@ -103,6 +104,7 @@ int main(int argc, char **argv) {
         printf("wrote %s\n", argv[a + 2]); return 0;
     }
     if (!strcmp(cmd, "nup")) {
+        if (a < argc && !strcmp(argv[a], "--keep-base")) { nximport_set_keep_base(1); a++; }
         if (a + 3 > argc) return 2;
         const char *out = argv[a], *tid = argv[a + 1]; const char **in = (const char **)argv + a + 2; int n = argc - a - 2;
         t0 = now(); signal(SIGINT, on_int);

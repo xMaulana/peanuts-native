@@ -33,6 +33,8 @@ static void test_records(void) {
     pwrec mt = {.kind = VKA_PW_MESH, .klen = kl, .key = {0x44, 0x55}};          // no task shader
     CHECK(vka_pw_rec_ok(&g, (const uint8_t *)&k), "vertex record");
     CHECK(vka_pw_rec_ok(&c, (const uint8_t *)&k), "compute record");
+    { pwrec ci = c; ci.klen = 16; CHECK(vka_pw_rec_ok(&ci, (const uint8_t *)&k), "a retyped compute record: its masks");   // PEANUTS
+      ci.klen = 8; CHECK(!vka_pw_rec_ok(&ci, (const uint8_t *)&k), "a compute record holds no key bytes or the two masks"); }   // PEANUTS
     CHECK(vka_pw_rec_ok(&m, (const uint8_t *)&k) && vka_pw_rec_ok(&mt, (const uint8_t *)&k), "mesh records");
     pwrec bad = m; bad.key[1] = 0; CHECK(!vka_pw_rec_ok(&bad, (const uint8_t *)&k), "a mesh record needs its fragment shader");
     bad = m; bad.key[3] = 7; CHECK(!vka_pw_rec_ok(&bad, (const uint8_t *)&k), "a mesh record has three slots");

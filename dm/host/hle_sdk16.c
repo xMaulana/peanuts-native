@@ -199,6 +199,9 @@ static const void *font_payload(const void *p) {
     pthread_mutex_unlock(&font_mu);
     return r;
 }
+// PEANUTS: hle_fontll.c sets these when it is part of the host (a test of this file alone leaves them NULL)
+void *(*dm_fontll_enter)(void *engine, const char *what);
+void (*dm_fontll_leave)(void *slot);
 static uint32_t (*font_load)(void *, char *, const void *, unsigned, unsigned);
 static pthread_once_t font_load_once = PTHREAD_ONCE_INIT;
 static void font_load_init(void) {
@@ -208,7 +211,9 @@ static void font_load_init(void) {
 HLE_FORCE("_ZN2nn6fontll18ScalableFontEngine8LoadFontEPcPKvjj", "shared font BFTTF allocation base → TTF payload; parsing and errors stay in the SDK", uint32_t, h_font_LoadFont, void *self, char *name, const void *data, unsigned index, unsigned capacity) {
     pthread_once(&font_load_once, font_load_init);
     const void *q = font_payload(data);
+    void *fe = dm_fontll_enter ? dm_fontll_enter(self, "LoadFont") : NULL;   // PEANUTS: one thread at a time in an engine (hle_fontll.c)
     uint32_t r = font_load(self, name, q, index, capacity);
+    if (fe) dm_fontll_leave(fe);   // PEANUTS
     if (q != data) { static int logged; if (r && !__atomic_exchange_n(&logged, 1, __ATOMIC_RELAXED)) LOG("[RED] shared font: ScalableFontEngine::LoadFont(%s) of the host's stand-in returned %u", name ? name : "?", r); }
     return r;
 }
@@ -233,7 +238,9 @@ HLE_FORCE("_ZN2nn6fontll18ScalableFontEngine10InitializeEPvj", "a work buffer th
         } else LOG("[RED] more than %d font engines with a small work buffer: this one keeps the game's", FONT_ENGINES);
         pthread_mutex_unlock(&font_mu);
     }
+    void *fe = dm_fontll_enter ? dm_fontll_enter(self, "Initialize") : NULL;   // PEANUTS: one thread at a time in an engine (hle_fontll.c)
     init(self, buf, size);
+    if (fe) dm_fontll_leave(fe);   // PEANUTS
 }
 HLE_FORCE("_ZN2nn6fontll18ScalableFontEngine22GetPointerToWorkBufferEv", "the game's own buffer, also when the engine runs on host memory", void *, h_font_WorkBuffer, void *self) {
     static void *(*get)(void *);

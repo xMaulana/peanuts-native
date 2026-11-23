@@ -1,6 +1,6 @@
 {
   "about": "Written by peanuts/scripts/games_catalog.py from peanuts/release-titles.txt, dm/games/<title ID>/game.tsv and peanuts/games.tsv. Do not edit by hand.",
-  "app_version": "0.1.6",
+  "app_version": "0.1.7",
   "readme_order": [
     "01006BB00C6F0000",
     "01008CF01BAAC000",
@@ -53,7 +53,14 @@
     "010051C0134F8000",
     "01008BC024FDE000",
     "0100B8E016F76000",
-    "01002B00111A2000"
+    "01002B00111A2000",
+    "01002C9022770000",
+    "01006000040C2000",
+    "0100DE501433A000",
+    "0100F4300BF2C000",
+    "010062E01FE0C000",
+    "0100F7E00C70E000",
+    "010065301A2E0000"
   ],
   "games": [
     {
@@ -228,6 +235,27 @@
       "note": "dm/games/01001B300B9BE000/README.md"
     },
     {
+      "title_id": "010062E01FE0C000",
+      "name": "Digimon Story Time Stranger",
+      "profile_name": "Digimon Story Time Stranger",
+      "builds": [
+        {
+          "version": "v262144",
+          "number": 262144,
+          "display": "1.2.2"
+        }
+      ],
+      "readme_update": "1.2.2",
+      "package": "v262144",
+      "companion": false,
+      "since": "0.1.7",
+      "contributors": [
+        "intermission88"
+      ],
+      "profile": "dm/games/010062E01FE0C000/game.tsv",
+      "note": "dm/games/010062E01FE0C000/README.md"
+    },
+    {
       "title_id": "01006AE02236C000",
       "name": "Double Dragon Revive",
       "profile_name": "Double Dragon Revive",
@@ -396,6 +424,27 @@
       "note": "dm/games/010055D009F78000/README.md"
     },
     {
+      "title_id": "0100F7E00C70E000",
+      "name": "Hogwarts Legacy",
+      "profile_name": "Hogwarts Legacy",
+      "builds": [
+        {
+          "version": "v327680",
+          "number": 327680,
+          "display": "1.0.5"
+        }
+      ],
+      "readme_update": "1.0.5",
+      "package": "v327680",
+      "companion": false,
+      "since": "0.1.7",
+      "contributors": [
+        "tapionallanaire"
+      ],
+      "profile": "dm/games/0100F7E00C70E000/game.tsv",
+      "note": "dm/games/0100F7E00C70E000/README.md"
+    },
+    {
       "title_id": "01002B00111A2000",
       "name": "Hyrule Warriors: Age of Calamity",
       "profile_name": "Hyrule Warriors: Age of Calamity",
@@ -557,6 +606,27 @@
       "contributors": [],
       "profile": "dm/games/0100B63016916000/game.tsv",
       "note": "dm/games/0100B63016916000/README.md"
+    },
+    {
+      "title_id": "0100F4300BF2C000",
+      "name": "New Pokémon Snap",
+      "profile_name": "New Pokemon Snap",
+      "builds": [
+        {
+          "version": "v0",
+          "number": 0,
+          "display": null
+        }
+      ],
+      "readme_update": "v0",
+      "package": "v0",
+      "companion": false,
+      "since": "0.1.7",
+      "contributors": [
+        "ssv0225"
+      ],
+      "profile": "dm/games/0100F4300BF2C000/game.tsv",
+      "note": "dm/games/0100F4300BF2C000/README.md"
     },
     {
       "title_id": "0100B8E016F76000",
@@ -787,6 +857,25 @@
       "note": "dm/games/010099A00BC1E000/README.md"
     },
     {
+      "title_id": "010065301A2E0000",
+      "name": "Star Ocean The Second Story R",
+      "profile_name": "STAR OCEAN THE SECOND STORY R",
+      "builds": [
+        {
+          "version": "v196608",
+          "number": 196608,
+          "display": "1.1.0"
+        }
+      ],
+      "readme_update": "1.1.0",
+      "package": "v196608",
+      "companion": false,
+      "since": "0.1.7",
+      "contributors": [],
+      "profile": "dm/games/010065301A2E0000/game.tsv",
+      "note": "dm/games/010065301A2E0000/README.md"
+    },
+    {
       "title_id": "01008BC024FDE000",
       "name": "STEINS;GATE RE:BOOT",
       "profile_name": "STEINS;GATE RE:BOOT",
@@ -891,6 +980,27 @@
       "contributors": [],
       "profile": "dm/games/0100000000010000/game.tsv",
       "note": "dm/games/0100000000010000/README.md"
+    },
+    {
+      "title_id": "0100DE501433A000",
+      "name": "Tetris Effect: Connected",
+      "profile_name": "Tetris Effect: Connected",
+      "builds": [
+        {
+          "version": "v1310720",
+          "number": 1310720,
+          "display": "2.0.2.2"
+        }
+      ],
+      "readme_update": "2.0.2.2",
+      "package": "v1310720",
+      "companion": false,
+      "since": "0.1.7",
+      "contributors": [
+        "intermission88"
+      ],
+      "profile": "dm/games/0100DE501433A000/game.tsv",
+      "note": "dm/games/0100DE501433A000/README.md"
     },
     {
       "title_id": "01007EF00011E000",
@@ -1008,10 +1118,32 @@
       "companion": false,
       "since": null,
       "contributors": [
-        "intermission88"
+        "intermission88",
+        "davdxpx"
       ],
       "profile": "dm/games/010051F0207B2000/game.tsv",
       "note": "dm/games/010051F0207B2000/README.md"
+    },
+    {
+      "title_id": "01002C9022770000",
+      "name": "Trails in the Sky 1st Chapter",
+      "profile_name": "Trails in the Sky 1st Chapter",
+      "builds": [
+        {
+          "version": "v393216",
+          "number": 393216,
+          "display": "1.0.7"
+        }
+      ],
+      "readme_update": "1.0.7",
+      "package": "v393216",
+      "companion": false,
+      "since": "0.1.7",
+      "contributors": [
+        "tapionallanaire"
+      ],
+      "profile": "dm/games/01002C9022770000/game.tsv",
+      "note": "dm/games/01002C9022770000/README.md"
     },
     {
       "title_id": "01007A2027548000",
@@ -1090,6 +1222,27 @@
       "contributors": [],
       "profile": "dm/games/0100C2901153C000/game.tsv",
       "note": "dm/games/0100C2901153C000/README.md"
+    },
+    {
+      "title_id": "01006000040C2000",
+      "name": "Yoshi's Crafted World",
+      "profile_name": "Yoshi's Crafted World",
+      "builds": [
+        {
+          "version": "v65536",
+          "number": 65536,
+          "display": "1.0.1"
+        }
+      ],
+      "readme_update": "1.0.1",
+      "package": "v65536",
+      "companion": false,
+      "since": "0.1.7",
+      "contributors": [
+        "999sian"
+      ],
+      "profile": "dm/games/01006000040C2000/game.tsv",
+      "note": "dm/games/01006000040C2000/README.md"
     }
   ]
 }

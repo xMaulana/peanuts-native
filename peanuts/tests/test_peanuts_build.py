@@ -54,6 +54,25 @@ class Build(unittest.TestCase):
                 os.environ.pop(k, None)
                 if v is not None: os.environ[k] = v
 
+    def test_refuse_no_pc_decoder(self):
+        """New Pokémon Snap (PC_REFUSE) stops before the import with the phone named, unless a decoder is given; it is not in PC_DECODE"""
+        app = '0100F4300BF2C000'
+        self.assertIn(app, pb.PC_REFUSE); self.assertNotIn(app, pb.PC_DECODE)
+        env = {k: os.environ.pop(k, None) for k in ('DM_OODLE_OOZ', 'DM_OODLE_HOST', 'DM_OODLE_MODULES', 'DM_GLSLC_CAPTURE', 'DM_UE_SHADERS')}
+        try:
+            with self.assertRaises(SystemExit) as c: pb.check_device_steps(app, 'New Pokémon Snap')
+            self.assertIn('build it on the phone; the PC builder can\'t decode its archives yet', str(c.exception))
+            self.assertTrue(str(c.exception).startswith('[RED] '))
+            os.environ['DM_OODLE_OOZ'] = '/w/unoodle'
+            pb.check_device_steps(app, 'New Pokémon Snap')   # a worker of the user's own: not refused here
+            del os.environ['DM_OODLE_OOZ']
+            os.environ.update({'DM_OODLE_HOST': 'h', 'DM_OODLE_MODULES': 'm'})
+            pb.check_device_steps(app, 'New Pokémon Snap')   # the game's own decoder (a Mac host)
+        finally:
+            for k, v in env.items():
+                os.environ.pop(k, None)
+                if v is not None: os.environ[k] = v
+
     def test_refuse_real_profiles(self):
         """The two games the guide names, while this tree has their profiles"""
         for app, marker in (('010055D009F78000', '/glslc_capture/'), ('01005270232F2000', '/ue_shaders/')):

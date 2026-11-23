@@ -131,6 +131,13 @@ static thr_t *cur(void) {
     if (!t) die("thread SVC called from a non-guest thread");
     return t;
 }
+// PEANUTS begin: a resource the SDK leaves to Horizon's cores to keep apart (hle_fontll.c's font engines, docs/reference/threads.md "Two threads of one core in a
+//   font engine"): dm_core_excl_held says the calling thread holds one, dm_core_excl_release gives back what it holds. A thread blocks at its SVCs and in native HLE
+//   waits (thr_svc_enter, dm_thread_native_wait), and on Horizon its core then runs another thread
+__thread int dm_core_excl_held;
+void (*dm_core_excl_release)(void);
+uint64_t dm_thread_id_self(void) { thr_t *t = pthread_getspecific(g_keythr); return t ? t->id : 0; }
+// PEANUTS end
 // Horizon's per-core priority ordering: a woken higher-priority thread pinned to
 // the caller's core runs until it blocks before the signalling thread continues.
 // See docs/reference/threads.md, "Same-core wake handoffs", for the movie lifetime failure this prevents.
@@ -203,6 +210,7 @@ void dm_thread_service_request(void) {
 void dm_thread_native_wait(int entering) {
     thr_t *t = pthread_getspecific(g_keythr);
     if (!t) return;
+    if (entering && dm_core_excl_held && dm_core_excl_release) dm_core_excl_release();   // PEANUTS: it blocks (dm_core_excl_held above); before G, which the release does not take
     pthread_mutex_lock(&G);
     // PEANUTS: where this thread's stack is while it waits (dm_guest_stopped_in), noted inside the entering branch. As a statement of its own between the two branches it
     // took the else below for itself: a wait entered inside another counted down instead of up, and the outer wait's end died on "unbalanced native HLE wait"
@@ -460,6 +468,7 @@ static void on_pause_sig(int sig, siginfo_t *si, void *uc_) {
 // called by the gate on SVC entry / exit (gate_dispatch in hle.c)
 void thr_svc_enter(uint64_t *regs, uint64_t pc) {
     thr_t *t = pthread_getspecific(g_keythr); if (!t) return;
+    if (dm_core_excl_held && dm_core_excl_release) dm_core_excl_release();   // PEANUTS: an SVC is where a thread blocks (dm_core_excl_held above)
     t->svc_pc = pc; t->svc_x18 = (uint64_t)(uintptr_t)dm_slot_get(18); atomic_store(&t->svc_regs, regs); atomic_fetch_or(&t->svc_state, 1);
     if (atomic_load_explicit(&t->qos_pending, memory_order_relaxed) && atomic_exchange(&t->qos_pending, 0)) {
         pthread_mutex_lock(&G); qos_apply(t); pthread_mutex_unlock(&G);
@@ -735,6 +744,29 @@ static const char *thr_name(thr_t *t, char *nb, size_t n) {   // SDK ThreadType+
     if (plat_mem_read(t->arg + 0x1a0, &np, 8) || !np || plat_mem_read(np, nb, n - 1)) return "?";
     nb[n - 1] = 0; return nb;
 }
+// PEANUTS begin: for hle_fontll.c (dm_core_excl_held above). Whether the caller leaves such a resource to guest thread `owner` between two of its uses, as its core
+//   would on Horizon: both pinned to the same core, and owner alive, runnable and of the same or a higher priority (a core runs no lower-priority thread beside it,
+//   and one of the same priority only once it blocks). 0 for a host thread, an owner gone, or threads Horizon could put on different cores
+int dm_thread_core_excl_wait(uint64_t owner) {
+    thr_t *self = pthread_getspecific(g_keythr); if (!self || !owner) return 0;
+    int r = 0;
+    pthread_mutex_lock(&G);
+    for (thr_t *t = g_all; t; t = t->all) if (t->id == owner) {
+        r = t != self && t->started && !t->exited && thr_runnable(t) && t->mask == self->mask && !(self->mask & (self->mask - 1)) && t->prio <= self->prio;
+        break;
+    }
+    pthread_mutex_unlock(&G);
+    return r;
+}
+void dm_thread_describe(uint64_t id, char *buf, size_t n) {
+    snprintf(buf, n, "a host thread");
+    if (!id) return;
+    pthread_mutex_lock(&G);
+    for (thr_t *t = g_all; t; t = t->all) if (t->id == id) {
+        char nb[32]; snprintf(buf, n, "'%s' (priority %d, core %d, mask %#llx)", thr_name(t, nb, sizeof nb), t->prio, t->core, (unsigned long long)t->mask); break; }
+    pthread_mutex_unlock(&G);
+}
+// PEANUTS end
 // The calling thread's time in guest waits since its last call (hle_nvn.c's [longframe] attribution): in all, the longest one, its kind and the name of the thread
 // that ended it ("host" for a host thread's signal, "timeout" when none did); SleepThread's sleeps; native HLE waits (a service's blocking call). 0 = not a guest thread
 static const char *const g_wkname[] = {"", "mutex", "condvar", "address", "sync"};

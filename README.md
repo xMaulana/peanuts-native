@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="status" src="https://img.shields.io/badge/release-0.1.6-brightgreen"> <!-- PEANUTS -->
+  <img alt="status" src="https://img.shields.io/badge/release-0.1.7-brightgreen"> <!-- PEANUTS -->
   <img alt="license" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue">
   <img alt="platform" src="https://img.shields.io/badge/platform-Android%2013%2B-green">
 </p>
@@ -32,7 +32,7 @@ too.
 
 <!-- PEANUTS begin: the Supported games table, written by peanuts/scripts/games_catalog.py from peanuts/games.tsv, peanuts/release-titles.txt and the profiles. Edit peanuts/games.tsv, not this table -->
 
-Peanuts Native 0.1.6 includes 52 games. The Companion column shows whether a game appears in the Eden Duo Companions catalog, and the Contributor column the community members who brought a game to Peanuts Native. Updates are shown as version numbers or numeric update IDs.
+Peanuts Native 0.1.7 includes 59 games. The Companion column shows whether a game appears in the Eden Duo Companions catalog, and the Contributor column the community members who brought a game to Peanuts Native. Updates are shown as version numbers or numeric update IDs.
 
 | Game | Title ID | Game update | Companion | Contributor |
 |---|---|---|---|---|
@@ -74,7 +74,7 @@ Peanuts Native 0.1.6 includes 52 games. The Companion column shows whether a gam
 | Astral Chain | `01007300020FA000` | 1.0.1 | No |  |
 | Diablo III: Eternal Collection | `01001B300B9BE000` | 2.7.7.92380 | Yes |  |
 | EA Sports FC 27 | `0100C49025D3E000` | 1.8d.6523, 1.8d.f570 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
-| Tomodachi Life: Living the Dream | `010051F0207B2000` | 1.0.4 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
+| Tomodachi Life: Living the Dream | `010051F0207B2000` | 1.0.4 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a><br><a href="https://github.com/davdxpx"><img src="https://img.shields.io/badge/davdxpx-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="davdxpx"></a> |
 | Unicorn Overlord | `010069401ADB8000` | 1.05 | No |  |
 | Luigi's Mansion 3 | `0100DCA0064A6000` | 1.4.0 | No |  |
 | Pokémon Legends: Z-A | `0100F43008C44000` | 2.0.2 | No |  |
@@ -88,10 +88,17 @@ Peanuts Native 0.1.6 includes 52 games. The Companion column shows whether a gam
 | STEINS;GATE RE:BOOT | `01008BC024FDE000` | 1.0.3, 1.0.4 | No | ⭐<br><a href="https://github.com/skyhong2002"><img src="https://img.shields.io/badge/skyhong2002-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="skyhong2002"></a> |
 | NieR:Automata The End of YoRHa Edition (Asian release) | `0100B8E016F76000` | 1.0.3 | No |  |
 | Hyrule Warriors: Age of Calamity | `01002B00111A2000` | 1.3.0 | No |  |
+| Trails in the Sky 1st Chapter | `01002C9022770000` | 1.0.7 | No | ⭐<br><a href="https://github.com/tapionallanaire"><img src="https://img.shields.io/badge/tapionallanaire-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="tapionallanaire"></a> |
+| Yoshi's Crafted World | `01006000040C2000` | 1.0.1 | No | ⭐<br><a href="https://github.com/999sian"><img src="https://img.shields.io/badge/999sian-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="999sian"></a> |
+| Tetris Effect: Connected | `0100DE501433A000` | 2.0.2.2 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
+| New Pokémon Snap | `0100F4300BF2C000` | v0 | No | ⭐<br><a href="https://github.com/ssv0225"><img src="https://img.shields.io/badge/ssv0225-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="ssv0225"></a> |
+| Digimon Story Time Stranger | `010062E01FE0C000` | 1.2.2 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
+| Hogwarts Legacy | `0100F7E00C70E000` | 1.0.5 | No | ⭐<br><a href="https://github.com/tapionallanaire"><img src="https://img.shields.io/badge/tapionallanaire-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="tapionallanaire"></a> |
+| Star Ocean The Second Story R | `010065301A2E0000` | 1.1.0 | No |  |
 
 <!-- PEANUTS end: the Supported games table -->
 
-The 0.1.6 release candidate installed over 0.1.5 on an AYN Thor with its saves kept. Nine of the 13 new games reached early gameplay on an AYN Thor with Turnip, among them the Hyrule Field battle in Hyrule Warriors: Age of Calamity and Lumiose Station in Pokémon Legends: Z-A. The other four were checked on other Android devices.
+Every game new in 0.1.7 reached gameplay on an AYN Thor with Turnip. Trails in the Sky 1st Chapter, Yoshi's Crafted World, Star Ocean The Second Story R and Hogwarts Legacy were checked for this release, among them Rail-Yard Run in Yoshi's Crafted World at 60 fps and the London intro in Hogwarts Legacy. Tetris Effect: Connected, Digimon Story Time Stranger and New Pokémon Snap were checked by their contributors on their own AYN Thor. <!-- PEANUTS: what this release was checked on -->
 
 ## What you need
 
@@ -176,18 +183,24 @@ See [CONTRIBUTING.md](peanuts/docs/CONTRIBUTING.md) for adding a game, fixing a 
 Peanuts Native is a fork of [Banana Native](https://git.eden-emu.dev/moceure/BananaNative) by moceure, which does the
 real work of running Switch games natively on Android and is built on [nxnative](https://github.com/seedds/nxnative)
 by seedds (MIT). Some fixes are adapted from [nx2android](https://github.com/shirai91/nx2android) (MIT).
+The Miis are drawn with the colour tables and face layout of [vee](https://github.com/j0lol/vee) (MIT) and their textures decoded with
+[bcdec](https://github.com/iOrange/bcdec) (MIT). <!-- PEANUTS: the Mii drawing's sources (android/NOTICE.md) -->
 
 The companion runtime and package format come from [Eden Duo](https://github.com/igawa6/eden-duo).
 
-Contributors: <!-- PEANUTS: the contributor list of this fork -->
+Contributors: <!-- PEANUTS begin: the contributor list of this fork -->
 
-- [intermission88](https://github.com/intermission88): the builder for PC, Mac and Linux (`peanuts/docs/BUILDER.md`, pull request #13), the profiles of Kirby's Return to Dream Land Deluxe, Kirby and the Forgotten Land and Super Mario 3D World + Bowser's Fury (pull requests #34, #84 and #83), the guide for adding a game (`peanuts/docs/NEW-GAME.md`, pull request #34), and fixes to the on-device packer, the release notes popup and the Unreal shader step (pull requests #37, #35 and #71).
-- [davdxpx](https://github.com/davdxpx): the issue and discussion forms rebuilt from the ground up, with a game catalog that also keeps the Supported games table up to date (pull request #175), building from .nsz and .xcz files, the launcher and companion on the second screen, Swap screens, the GPU driver page, Share build log, game icons that outlive their NSP, companion release notes, and many smaller fixes across the app.
+- [intermission88](https://github.com/intermission88): the builder for PC, Mac and Linux (`peanuts/docs/BUILDER.md`, pull request #13), the profiles of Kirby's Return to Dream Land Deluxe, Kirby and the Forgotten Land, Super Mario 3D World + Bowser's Fury, Tetris Effect: Connected and Digimon Story Time Stranger (pull requests #34, #84, #83, #330 and #269), the guide for adding a game (`peanuts/docs/NEW-GAME.md`, pull request #34), total play time and the stats page on the bottom screen (pull requests #282 and #289), names in STORY OF SEASONS: Grand Bazaar, EA SPORTS FC 27's second controller and the NVN sampler builder's getters (pull requests #354, #284 and #268), the PC tools on Windows (pull request #328), and fixes to the on-device packer, the release notes popup and the Unreal shader step (pull requests #37, #35 and #71).
+- [davdxpx](https://github.com/davdxpx): the issue and discussion forms rebuilt from the ground up, with a game catalog that also keeps the Supported games table up to date (pull request #175), building from .nsz and .xcz files, the launcher and companion on the second screen, Swap screens, the GPU driver page, Share build log, game icons that outlive their NSP, companion release notes, mod folders left out of the library and Import pack (pull requests #249 and #260), Settings in ten sections with one search (pull requests #315 and #312), users with pictures, Miis and Who's playing? (pull request #321), the Mali PanVK pointer (pull request #296), Tomodachi Life's clock and boot crash fixes (pull requests #336 and #345), and many smaller fixes across the app.
 - [elliott-groves](https://github.com/elliott-groves): development builds that install beside the Peanuts Native app (pull request #60).
-- [tapionallanaire](https://github.com/tapionallanaire): building the APK on Windows (pull request #54), and the Trails in the Sky 2nd Chapter and Double Dragon Revive profiles (pull requests #164 and #197).
-- [dnyan007](https://github.com/dnyan007): the DRAGON BALL: Sparking! ZERO profile and the sync of GPU-written terrain into block-compressed textures (pull requests #168 and #167).
+- [tapionallanaire](https://github.com/tapionallanaire): building the APK on Windows (pull request #54), the Hogwarts Legacy, Trails in the Sky 1st Chapter, Trails in the Sky 2nd Chapter and Double Dragon Revive profiles (pull requests #95, #221, #164 and #197), the shader readers for Level-5 archives (pull requests #230 and #243), the Unreal 4.27 allocator's page alignment (pull request #236), and the Advance Wars 1+2: Re-Boot Camp memory pool and FINAL FANTASY TACTICS update 1.2.0 (pull requests #231 and #228).
+- [dnyan007](https://github.com/dnyan007): the DRAGON BALL: Sparking! ZERO profile, its allocator start-up fix and 60 fps, and the sync of GPU-written terrain into block-compressed textures (pull requests #168, #167, #290 and #302).
 - [skyhong2002](https://github.com/skyhong2002): STEINS;GATE RE:BOOT 1.0.4, standalone NUP updates in the library, and Prepare surviving a missed job status read (pull requests #192, #185 and #181).
+- [ssv0225](https://github.com/ssv0225): the New Pokémon Snap profile with its DRPF archive reader for the shader split and the NVN memory pool builder's getters, and the shader tools running on Linux (pull requests #307, #308, #309 and #310).
+- [999sian](https://github.com/999sian): Yoshi's Crafted World on Android, with samplers chosen by the view's format, streamed mip levels, bounded draw ranges and buffer-texture classes (pull request #140).
+- [ts-miller](https://github.com/ts-miller): the encoder opcodes for occlusion queries (pull request #263).
 - [ArchOwlen](https://github.com/ArchOwlen): the first issue and discussion forms (pull request #5).
+<!-- PEANUTS end -->
 
 The project as a whole is licensed GPL-3.0-or-later. Frame generation (ported from Eden and lsfg-vk) and other
 components carry their own licenses; see `android/NOTICE.md` and `dm/third_party/README.md`.

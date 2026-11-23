@@ -40,6 +40,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_mtf_size
 	$(B)/t_pkp_aspect
 	$(B)/t_uecvar
+	$(B)/t_ue_heap_alignment # PEANUTS: #236
 	$(B)/t_audren_work
 	$(B)/t_audren_layout
 	$(B)/t_swkbd
@@ -66,6 +67,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_pad_motion
 	$(B)/t_motion_apple
 	$(B)/t_pad_apple
+	$(B)/t_account # PEANUTS(upstream-candidate): nxnative 84e63860
 	$(B)/t_motion_pro
 	$(B)/t_motion_pro_mac
 	TMPDIR="$(abspath $(B))" $(B)/t_hid
@@ -97,6 +99,10 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_android_pckeep
 	$(B)/t_android_pwlist
 	$(B)/t_android_fmtlist
+# PEANUTS: sampler chosen by the view format
+	$(B)/t_android_sampfilter
+# PEANUTS: bounded draw ranges
+	$(B)/t_android_draw_range
 	$(B)/t_android_place
 	$(B)/t_android_ovl
 	$(B)/t_android_pace
@@ -231,6 +237,10 @@ $(B)/t_fpslock: t_fpslock.c ../hle_fpslock.c ../hle.h ../dm.h $(GAME_H) | $(B)
 run: $(B)/t_uecvar
 $(B)/t_uecvar: t_uecvar.c ../hle_uecvar.c ../hle.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wno-unused-function $(GINC) -o $@ t_uecvar.c
+# PEANUTS: the Unreal 4.27 page alignment (#236)
+run: $(B)/t_ue_heap_alignment
+$(B)/t_ue_heap_alignment: t_ue_heap_alignment.c ../hle_uemalloc.c ../hle.h ../dm.h $(GAME_H) | $(B)
+	$(CLANG) -O1 -g -Wno-unused-function -Wl,-dead_strip $(GINC) -o $@ t_ue_heap_alignment.c
 $(B)/t_swkbd: t_swkbd.c ../hle_swkbd.c ../hle.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -Wno-unused-function -I.. $(GINC) -o $@ t_swkbd.c ../hle_swkbd.c
 run: $(B)/t_bigstack
@@ -270,6 +280,11 @@ $(B)/t_motion_apple: t_motion_apple.m ../motion_apple.h ../dm_input.h | $(B)
 run: $(B)/t_pad_apple
 $(B)/t_pad_apple: t_pad_apple.m ../pad_apple.h ../dm_input.h | $(B)
 	$(CLANG) -O1 -g -fobjc-arc -Wall -Werror -I.. -o $@ t_pad_apple.m -framework Foundation -framework GameController
+# PEANUTS begin(upstream-candidate): nxnative 84e63860, account::GetUserId takes any handle
+run: $(B)/t_account
+$(B)/t_account: t_account.c ../hle_account.c ../hle.h ../dm.h $(GAME_H) | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function $(GINC) -o $@ t_account.c
+# PEANUTS end
 run: $(B)/t_motion_pro $(B)/t_motion_pro_mac
 $(B)/t_motion_pro: t_motion_pro.c ../motion_pro.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -fsanitize=address,undefined -o $@ t_motion_pro.c
@@ -488,6 +503,14 @@ $(B)/t_android_pwlist: t_android_pwlist.c $(VKA)/vka_pwlist.h $(VKA)/vka_gkey.h 
 # An image's format list (vka_fmtlist.h; vka_tex.c img_create, img_lists, img_storage_upgrade)
 $(B)/t_android_fmtlist: t_android_fmtlist.c $(VKA)/vka_fmtlist.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_fmtlist.c
+# PEANUTS: a direct sampler must fit the sampled image view's filter features
+run: $(B)/t_android_sampfilter
+$(B)/t_android_sampfilter: t_android_sampfilter.c $(VKA)/vka_sampfilter.h ../../gfx/nvn/nvn_obj.h ../../gfx/nvn/include/nvn.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I../../gfx/nvn/include -o $@ $<
+# PEANUTS: bounded draw ranges
+run: $(B)/t_android_draw_range
+$(B)/t_android_draw_range: t_android_draw_range.c $(VKA)/vka_draw_range.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -fsanitize=address,undefined -o $@ $<
 # Large memory pools placed by parts: the range arithmetic (vka_place.h; vka_mem.c mtl_pool_need)
 $(B)/t_android_place: t_android_place.c $(VKA)/vka_place.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_place.c
@@ -548,7 +571,8 @@ android-psosync: $(B)/t_android_psosync
 # queued region writes; vka_tex.c): the sanitizer stops at the first image used or freed after it was freed. `build/t_android_imglife old` shows the fault of the
 # first device run of the resolution scale. Built with run; android-imglife builds and runs it
 run: $(B)/t_android_imglife
-$(B)/t_android_imglife: t_android_imglife.c | $(B)
+# PEANUTS: image retirement covers the recording submission
+$(B)/t_android_imglife: t_android_imglife.c $(VKA)/vka_texown.h ../../gfx/nvn/nvn_hmap.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -o $@ t_android_imglife.c
 .PHONY: android-imglife
 android-imglife: $(B)/t_android_imglife
@@ -713,10 +737,27 @@ peanuts-host: peanuts-sync
 peanuts-nro: $(B)/t_peanuts_nroarena
 	$(B)/t_peanuts_nroarena "$(abspath $(B))" 2> $(B)/t_peanuts_nroarena.log
 peanuts-host: peanuts-nro
+# PEANUTS: t_peanuts_time: hle_time.c's steady and user clocks on a phone that sleeps and restarts (GitHub issue #329): no user clock change from sleep or a restart, spans of
+# the real time that passed, a custom time as the one user change, the old monotonic steady clock's time points as another clock
+.PHONY: peanuts-time
+peanuts-time: $(B)/t_peanuts_time
+	$(B)/t_peanuts_time 2> $(B)/t_peanuts_time.log
+peanuts-host: peanuts-time
+$(B)/t_peanuts_time: t_peanuts_time.c ../hle_time.c ../hle.h ../dm.h $(GAME_H) | $(B)
+	$(CLANG) -O1 -g -Wall -Wno-unused-function $(PN_ASIF) -I.. $(GINC) -o $@ t_peanuts_time.c -lpthread
 $(B)/t_peanuts_nroarena: t_peanuts_nroarena.c ../loader.c ../hle.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wall -Wno-format -Wno-unused-function -Wno-unused-variable $(PN_ASIF) -Istub_android -I.. $(GINC) -o $@ t_peanuts_nroarena.c -lpthread -lm
 $(B)/t_peanuts_syncstress: t_peanuts_syncstress.c ../hle_thread.c ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wall -Wno-format -Wno-unused-function -Wno-unused-variable $(PN_ASIF) -DDM_TEST_THREAD_ENTER -I.. $(GINC) -o $@ t_peanuts_syncstress.c -lpthread -lm
 $(B)/t_peanuts_syncstress_old: t_peanuts_syncstress.c ../hle_thread.c ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wall -Wno-format -Wno-unused-function -Wno-unused-variable $(PN_ASIF) -DDM_TEST_THREAD_ENTER -DDM_TEST_CV_OLD_ORDER -I.. $(GINC) -o $@ t_peanuts_syncstress.c -lpthread -lm
+# t_peanuts_fontll: hle_fontll.c's font engines used by one thread at a time, as a Horizon core keeps them, with real threads and a fake engine: the race straight into
+# the engine first (the check that the test sees it), then the take-overs (no call beside another, a higher-priority thread's sequences on its own font, who waits for
+# whom by core and priority, a native wait and an exit giving the engine back, Finalize freeing its slot)
+.PHONY: peanuts-fontll
+peanuts-fontll: $(B)/t_peanuts_fontll
+	$(B)/t_peanuts_fontll
+peanuts-host: peanuts-fontll
+$(B)/t_peanuts_fontll: t_peanuts_fontll.c ../hle_thread.c ../hle_fontll.c ../hle.h ../dm.h $(GAME_H) | $(B)
+	$(CLANG) -O1 -g -Wall -Wno-format -Wno-unused-function -Wno-unused-variable $(PN_ASIF) -DDM_TEST_THREAD_ENTER -I.. $(GINC) -o $@ t_peanuts_fontll.c -lpthread -lm
 # PEANUTS end

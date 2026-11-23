@@ -23,6 +23,21 @@ The streamed textures are sparse (flag 0x20, no packaged layout), DXT1 / DXT5 (0
 
 The Yoshis are plain lightmapped static-mesh materials (fragment key `a7c457a031dcb113`: 1024² DXT1 base colour and BC5 normal, both sampled with a mip bias, an HQ lightmap and a static shadow mask; no shells, alpha test or alpha to coverage), so their felt is in the textures. From the moment the opening went dark they sampled bright speckles and dark blotches, with sharp silhouettes: `texraw <serial>.<level>` showed levels 0–3 of the base colour intact and level 4 holding another texture (level 4 of the normal all zero). The streamer re-creates a texture with more levels when finer ones stream in, copies the resident levels from the old texture on the GPU (`nvnCommandBufferCopyTextureToTexture` from `main+0x27f5044`, Unreal's `RHIAsyncReallocateTexture2D`) and writes the new levels from the CPU; the host then uploaded the whole texture from its storage, where the copied levels had never been written. Fixed for every game: [GPU copies into textures uploaded from their storage](../../../docs/reference/nvn-objects.md#gpu-copies-into-textures-uploaded-from-their-storage).
 
+<!-- PEANUTS: Android rendering notes (OnePlus Pad 2), contributed by 999sian with the Vulkan fixes of GitHub PR #140 -->
+On the OnePlus Pad 2 (Adreno 750, Android 16, game 1.0.1), the broken title frame had 53 block-compressed Vulkan images whose finest mip was zero despite nonzero guest storage. Mirroring eligible whole-mip GPU copies into guest storage keeps later CPU uploads visible. With Turnip v32 the title island and felt in the opening rendered correctly; the Vulkan self-test also read back the CPU-filled and GPU-copied levels intact.
+
+On Turnip v32, Rail-Yard Run was reached and Yoshi moved, jumped and collected coins, but the driver still hung in the course. Turning off LRZ, UBWC, the upscaler, threaded command encoding or the replay worker did not establish a workaround. On Qualcomm's system driver, validation caught linear filtering of an integer image and an oversized unused clip/cull interface. After both fixes those validation errors disappeared on the same route, but the driver still reported invalid GPU reads. One address-traced run faulted outside every address range the driver had reported, not in a known retired image. None of the 23,497 pack shaders uses the raw global-memory address table. Copying CPU-known uniform data at recording time did not prevent the stock fault either.
+
+Turnip 27.0.0-R2 (Mesa `2648b2059f`) is not a reliable workaround on the Pad 2. One run passed the pipe and ramp and was stopped manually at frame 13,699 (247 s). A fresh launch using the same driver in the game's settings stalled at frame 1,578: fence 3,196 never completed, with the timeline at 3,195. A single playable run is not sufficient to certify this course.
+
+On the Pad 2 with Turnip T30, after preparing integer buffer-texture rows in the same class used to bind them, Rail-Yard Run reached its results screen (69 coins, 3 red coins). Earlier direct-descriptor and bounded-index changes alone still hung on T30. This verifies one complete first course on game 1.0.1, not later levels or other drivers.
+
+The world map on that run has broad colour bands in the sky and water, visible in the 1920×1080 window texture before display scaling. In a later 2× capture (3840×2160) Yoshi's felt still broke into coarse speckles. Direct sampler creation uses the device's sampler-object limit rather than the bindless table size, and a view whose format cannot be filtered linearly gets a nearest copy of its sampler. On the same T30 driver the corrected GPU self-test read 173 at a checker edge (linear: 173, nearest: 255).
+
+Before/after gameplay captures in the same blue-background course, both on T30 at 2× (3840×2160), show the difference: the coarse speckles on Yoshi's nose, belly and wings are gone with the corrected sampler, the finer felt texture remains, and the blue background no longer has the broad colour steps visible in the earlier capture.
+
+Internal resolution is separate from filtering. At 1×, the grading pass used a 1584×892 scene image on the map. In a course frame, the active area of a scene image that size was 1268×716; the remaining rows and columns were unused.
+
 ## Mac routes
 
 From boot, `A` at 22, 25, 28, 31, 34 and 55 s passes the start screen and picks Mellow Mode; `Plus` then `A` at 62–70 s skips the opening; `A` every 10 s from 83 s reaches the "How many Yoshis should go?" menu by about 120 s (`DM_CTL`, [05-debugging](../../../docs/agents/05-debugging.md)). With a save that has a level unlocked, the same presses continue from the menu into it.
@@ -44,3 +59,27 @@ Unreal's purgatory proxy: a romfs overlay (`DM_ROMFS_OVERLAY`) with `UE4CommandL
 ## Open
 
 - The iPhone (IPA 6.1 GB; 3.15 GB heap: check the memory it needs there).
+
+<!-- PEANUTS: Android on the AYN Thor, 2026-11-22 -->
+## Android
+
+Tested on the AYN Thor (Snapdragon 8 Gen 2, Adreno 740) with Turnip v26.2.0-R5 (driver ID 18), update 1.0.1, 2026-11-21.
+
+- Without the [sampler and streamed mip fixes](#rendering) the textures are scrambled from the title screen on: blocky, speckled and black patches on Yoshi, the ground and the backdrop, a dark world map. With them the title, Sunshine Station's map and Rail-Yard Run draw as on the Switch.
+- Menus and cutscenes run at 30 fps, Rail-Yard Run at 60 (59.8 fps paced, GPU about 6.5 ms a frame). Over 3 minutes of the course there was no hang and no crash. The hang reported on the OnePlus Pad 2 did not show on the Thor with or without the fixes in the time tested.
+- Audio plays (`OpenAudioOut`, real output). Input, scene changes and a relaunch work.
+- The first start prepares 5,029 shader parts for the driver (about 60 s on the Thor); later starts skip it.
+- The system driver was not tested. Later courses were not tested.
+- The update package carries the whole game, so the importer leaves the base package out of the `.nup`: 5.67 GB instead of 11.34 GB.
+
+### Frame rate
+
+Unreal steps the game by elapsed time. A 3 s walk from the start of Rail-Yard Run lands in the same place with the same coins at 20, 30, 45 and 60 fps (host frame limit, measured 19.9, 29.9, 45.0 and 59.8 fps paced on the Thor). The profile offers those caps as display-paced and experimental (`fps_limit_present 1`, `fps_modes 20,30,45,60`); Game owned, the default, keeps the game's own 30 in menus and 60 in courses. 40 was not measured and is not offered; 90 and 120 cannot be shown on the Thor's 60 Hz panel. The engine's own limit is not available: `ue_cvar.py` does not find `t.MaxFPS` or `nvn.SyncInterval` in this build, although both names are in `main`, because the game registers them in a shape DRAGON QUEST XI S does not use.
+
+### First start
+
+The seed list `vk_prewarm.bin` holds 548 pipeline keys (10 compute, 538 graphics) from runs through the title, the opening, Sunshine Station's map and Rail-Yard Run on Turnip. On a cold start they are made on 4 threads in 16 s while the shader parts are prepared (26.7 s), and the course then made no pipeline on the frame path. A second start read the pipeline cache and made the 548 keys in 0.3 s. It prepared the shader parts again, because a save during the first run's play had written only the game's own programs to the parts cache; the third start skipped preparing and showed its first frame about 8 s after the tap. The same happens without this game's changes, on any game.
+
+### Shaders on Android
+
+All 23,497 shaders sit in one RomFS file, `PJ033-Switch.pak`. The targeted split reads that one file of four and its tables match the profile byte for byte; a full split gives the same tables and the same package (sha256 of all four files). Split time 22.0 s targeted, 25.9 s full; a rebuild with unchanged inputs takes 1.6 s. One particle asset (`P_Demo_Smoke_01.uasset`) is Oodle or LZ5 compressed and is not read; the shader count still matches the profile.

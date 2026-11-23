@@ -200,7 +200,7 @@ int main(void) {
     { char out[700]; Prog q; memset(&q, 0, sizeof q); strcpy(q.stop_on, "check/"); snprintf(out, sizeof out, "%s/stop.nup", dir); const char *in[] = { p[B_B9], g.upd, a.path };
       int rc = run(out, in, 3, TID, &q);
       CHECK(rc && q.stop && strstr(nximport_last_error(), "stopped") && !exists(out), "while checking blocks: stopped (%s)", nximport_last_error()); }
-    { char out[700]; Prog q; memset(&q, 0, sizeof q); strcpy(q.stop_on, "base/romfs"); snprintf(out, sizeof out, "%s/stop.nup", dir); const char *in[] = { g.base, g.upd, a.path };
+    { char out[700]; Prog q; memset(&q, 0, sizeof q); strcpy(q.stop_on, "update/"); /* no base package by default: the update's steps */ snprintf(out, sizeof out, "%s/stop.nup", dir); const char *in[] = { g.base, g.upd, a.path };
       int rc = run(out, in, 3, TID, &q);
       CHECK(rc && q.stop && strstr(nximport_last_error(), "stopped") && !exists(out), "an uncompressed import while it writes: stopped too (%s)", nximport_last_error()); }
     { char t[20]; snprintf(t, sizeof t, "%016llx", (unsigned long long)TID); char out[700]; snprintf(out, sizeof out, "%s/after.nup", dir); const char *in[] = { p[B_SOLID], g.upd, a.path };

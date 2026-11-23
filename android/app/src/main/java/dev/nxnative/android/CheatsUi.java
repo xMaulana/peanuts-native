@@ -29,7 +29,7 @@ import java.util.Set;
 final class CheatsUi {
     private CheatsUi() {}
 
-    static final int PICK_FILE = 60, PICK_ZIP = 61, CREATE_ZIP = 62;
+    static final int PICK_FILE = 80, PICK_ZIP = 81, CREATE_ZIP = 82;   // PEANUTS: 60 to 62 are dev.peanuts.ui.LibrarySettings' pickers, whose result handler MainActivity asks first
     private static Game pendingFor;
 
     /** The game's cheats folder in the app's own storage: the merged file a start writes (DM_CHEATS) and imported/ with the player's files */

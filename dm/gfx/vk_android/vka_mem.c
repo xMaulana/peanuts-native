@@ -1736,7 +1736,21 @@ static int fb_kinds(void) {   // bit 1 shader, bit 2 texture; 0 off
     static int v = -1;
     if (v >= 0) return v;
     const char *e = getenv("DM_MEM_FILEBACK"), *k = getenv("DM_MEM_FILEBACK_KINDS");
-    int on = e && *e ? atoi(e) > 0 : 1; v = 0;   // (default on: the shader kind)
+    // PEANUTS: default on (the shader kind) only on a phone with less than DM_MEM_FILEBACK_RAM_GB (11) GiB of RAM, or when DM_MEM_FILEBACK_KINDS is set (the launcher's
+    // RAM saver): on the Thor (15 GiB, ~10 GiB available) DBZ Kakarot's boot and first loads moved 258 MiB of shader pools through the file and wrote ~350 MB to flash
+    // for 8 MiB file-backed at the end, and 18 frames of 0.1-0.6 s took 200-20,000 major faults each; with it off none did and pool placement fell 1.2 -> 0.7 s (2026-11-21)
+    int on;
+    if (e && *e) on = atoi(e) > 0;
+    else if (k && *k) on = 1;
+    else {
+        long long kb = 0; FILE *mf = fopen("/proc/meminfo", "re"); char ml[128];
+        while (mf && fgets(ml, sizeof ml, mf)) if (sscanf(ml, "MemTotal: %lld kB", &kb) == 1) break;
+        if (mf) fclose(mf);
+        const char *g = getenv("DM_MEM_FILEBACK_RAM_GB"); long long lim = (g && *g ? atoll(g) : 11) << 20;
+        on = !kb || kb < lim;
+        if (!on) VLOG("file-backed pools: off by default, %.1f GiB of RAM (DM_MEM_FILEBACK=1 or the RAM saver turns them on; DM_MEM_FILEBACK_RAM_GB=%lld)", kb / 1048576.0, lim >> 20);
+    }
+    v = 0;
     if (on) { const char *ks = k && *k ? k : "shader"; v = (strstr(ks, "shader") ? 1 : 0) | (strstr(ks, "texture") ? 2 : 0);
               if ((v & 1) && !nvn_shader_pools_deferred()) { v &= ~1; VLOG("file-backed pools: shader kind off: DM_VK_PLACE_SHADER_POOLS=1 places shader-code pools for their address"); }
               if (v) VLOG("file-backed pools (DM_MEM_FILEBACK): %s%s%s (DM_MEM_FILEBACK_KINDS=%s), an unlinked file in %s", v & 1 ? "shader-code pools" : "", v == 3 ? " and " : "",

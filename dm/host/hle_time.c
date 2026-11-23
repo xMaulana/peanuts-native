@@ -15,43 +15,85 @@ static int64_t fixed_time(void) {
                    if (v >= 0) LOG("DM_FIXED_TIME=%lld: the user clock returns a fixed value", (long long)v); }
     return v;
 }
+// PEANUTS begin: one clock under the steady clock and the user clock, the host's real-time clock (GitHub issue #329). Horizon's steady clock counts from the
+// RTC: it runs on while the console sleeps and across restarts, and its source ID changes only when the RTC is reset. The steady clock here was the host's
+// monotonic clock under one fixed source ID: on Android CLOCK_MONOTONIC stops in deep sleep and starts again at 0 at every boot. The user clock context's
+// offset (user time minus steady time) then grew by every hour the phone slept, and CalculateStandardUserSystemClockDifferenceByUser reported that sleep as
+// the user setting the clock forward; after a reboot the steady clock went back. Tomodachi Life: Living the Dream shifts every timestamp of its save by such a
+// change (main+0x8713a8 on 1.0.4), so the hours the phone slept never counted, and warns at any change, even of a second: the context, read from the two clocks one
+// after the other, could also come out a second off between two starts. Now the steady clock is that clock in seconds
+// and the user clock is the same reading plus the custom time's offset (DM_TIME, DM_TIME_OFFSET below): the offset stays the same through sleep and restarts and
+// changes only when a custom time is set or changed, which games are meant to see. Changing the phone's own clock moves both, so a game counts it as time that
+// passed. The source ID is new: time points of the monotonic steady clock belong to another clock, and a span to them is unknown, as after an RTC reset
+#define STEADY_SOURCE "dmhost-steady-02"
+// PEANUTS end
+// PEANUTS begin: the real-time clock read once, at the first call of a run, then advanced by the clock that counts sleep (follow-up of issue #329, asked for in
+// the review of PR #336). CLOCK_REALTIME itself steps when Android corrects the phone's clock (network or carrier time), backwards too, and a span between two
+// steady time points of one run then came out negative, which a Switch's steady clock never gives. CLOCK_BOOTTIME only goes forward and counts deep sleep; it
+// starts again at a reboot, which is a new run and a new anchor. So within a run the steady clock and the user clock are monotonic and count sleep, and across
+// runs they carry on through the real time each run starts from. A correction of the phone's clock reaches the game at its next start, as time that passed.
+// Apple has no CLOCK_BOOTTIME; its CLOCK_MONOTONIC counts sleep
+#ifdef CLOCK_BOOTTIME
+#define HOST_SLEEP_CLOCK CLOCK_BOOTTIME
+#else
+#define HOST_SLEEP_CLOCK CLOCK_MONOTONIC
+#endif
+static int64_t g_rt_anchor, g_sleep_anchor;
+static pthread_once_t g_anchor_once = PTHREAD_ONCE_INIT;
+static void rt_anchor(void) { g_rt_anchor = (int64_t)plat_clock_ns(CLOCK_REALTIME); g_sleep_anchor = (int64_t)plat_clock_ns(HOST_SLEEP_CLOCK); }
+static int64_t host_rt_ns(void) { pthread_once(&g_anchor_once, rt_anchor); return g_rt_anchor + ((int64_t)plat_clock_ns(HOST_SLEEP_CLOCK) - g_sleep_anchor); }
+// PEANUTS end
 // DM_TIME=YYYY-MM-DDTHH:MM[:SS] / DM_TIME_OFFSET=<±seconds>: a custom user clock, as Eden's "set the time" does. The clock runs from
-// there instead of the host's: DM_TIME anchors it to the host's monotonic clock (it advances as much as the run lasts), DM_TIME_OFFSET
+// there instead of the host's: DM_TIME starts it there (it advances as much as the host clock does), DM_TIME_OFFSET
 // follows the host clock at that offset. DM_FIXED_TIME= keeps precedence (a replay needs the same calendar time every run).
-static void user_clock(int64_t *sec, int64_t *nsec) {
-    static int mode = -2; static int64_t arg, base_ns;   // -1 host clock, 0 offset, 1 fixed start
-    if (mode == -2) {
-        const char *of = getenv("DM_TIME_OFFSET"), *t = getenv("DM_TIME");
-        mode = -1; arg = 0;
-        if (of && *of) { mode = 0; arg = (int64_t)strtoll(of, NULL, 0); LOG("DM_TIME_OFFSET=%lld: the user clock runs %+lld s off the host clock", (long long)arg, (long long)arg); }
-        else if (t && *t) {
-            struct tm tm; memset(&tm, 0, sizeof tm); tm.tm_sec = 0;
-            if (sscanf(t, "%d-%d-%dT%d:%d:%d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday, &tm.tm_hour, &tm.tm_min, &tm.tm_sec) >= 5) {
-                tm.tm_year -= 1900; tm.tm_mon -= 1;
-                // local wall-clock time, as Eden's "set the time" means it: the fields are read in the host's zone (DM_TZ, else the
-                // system's), not in UTC. timegm gives the fields as UTC; the zone's offset at that instant moves them back
-                mode = 1; arg = (int64_t)timegm(&tm);
-                { struct tm lt; time_t e = (time_t)arg; if (localtime_r(&e, &lt)) arg -= (int64_t)lt.tm_gmtoff; }
-                base_ns = (int64_t)plat_clock_ns(CLOCK_MONOTONIC);
-                LOG("DM_TIME=%s: the user clock starts there and advances (epoch %lld, local time)", t, (long long)arg);
-            } else LOG("[RED] DM_TIME=%s: want YYYY-MM-DDTHH:MM[:SS]", t);
-        }
+// PEANUTS: both are an offset from the host's real-time clock, fixed at the first call; *steady gets the steady clock's seconds of the same reading (issue #329)
+static int uc_mode = -1; static int64_t uc_arg;   // -1 host clock, 0 offset (DM_TIME_OFFSET, or DM_TIME's start minus the host clock at the first call)   // PEANUTS
+// PEANUTS: set once under pthread_once, so a thread that comes second never reads the mode before its offset (issue #329)
+static void user_clock_init(void) {
+    int64_t now_ns = host_rt_ns();   // PEANUTS: the anchored real-time clock (PR #365)
+    const char *of = getenv("DM_TIME_OFFSET"), *t = getenv("DM_TIME");
+    int mode = -1; int64_t arg = 0;   // PEANUTS
+    if (of && *of) { mode = 0; arg = (int64_t)strtoll(of, NULL, 0); LOG("DM_TIME_OFFSET=%lld: the user clock runs %+lld s off the host clock", (long long)arg, (long long)arg); }
+    else if (t && *t) {
+        struct tm tm; memset(&tm, 0, sizeof tm); tm.tm_sec = 0;
+        if (sscanf(t, "%d-%d-%dT%d:%d:%d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday, &tm.tm_hour, &tm.tm_min, &tm.tm_sec) >= 5) {
+            tm.tm_year -= 1900; tm.tm_mon -= 1;
+            // local wall-clock time, as Eden's "set the time" means it: the fields are read in the host's zone (DM_TZ, else the
+            // system's), not in UTC. timegm gives the fields as UTC; the zone's offset at that instant moves them back
+            int64_t start = (int64_t)timegm(&tm);   // PEANUTS: the start as an offset from the host clock (issue #329)
+            { struct tm lt; time_t e = (time_t)start; if (localtime_r(&e, &lt)) start -= (int64_t)lt.tm_gmtoff; }
+            mode = 0; arg = start - now_ns / 1000000000;
+            LOG("DM_TIME=%s: the user clock starts there and advances (epoch %lld, local time)", t, (long long)start);
+        } else LOG("[RED] DM_TIME=%s: want YYYY-MM-DDTHH:MM[:SS]", t);
     }
-    if (mode == 1) { int64_t ns = (int64_t)plat_clock_ns(CLOCK_MONOTONIC) - base_ns; *sec = arg + ns / 1000000000; *nsec = ns % 1000000000; return; }
-    struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts);
-    *sec = (int64_t)ts.tv_sec + (mode == 0 ? arg : 0); *nsec = ts.tv_nsec;
+    uc_mode = mode; uc_arg = arg;   // PEANUTS
 }
-static int64_t user_now(void) { int64_t s, ns; user_clock(&s, &ns); return s; }
+static void user_clock(int64_t *sec, int64_t *nsec, int64_t *steady) {
+    static pthread_once_t once = PTHREAD_ONCE_INIT; pthread_once(&once, user_clock_init);   // PEANUTS
+    int64_t now_ns = host_rt_ns();   // PEANUTS: the one reading (issue #329), of the anchored real-time clock (its follow-up)
+    // PEANUTS: the user clock and the steady clock from the one reading (issue #329)
+    *steady = now_ns / 1000000000;
+    *sec = now_ns / 1000000000 + (uc_mode == 0 ? uc_arg : 0); *nsec = now_ns % 1000000000;
+}
+// PEANUTS begin: the user time (DM_FIXED_TIME first) and a steady time point of one reading, so a snapshot's or a context's two never fall in different seconds (issue #329)
+static void host_now(int64_t *user, int64_t *user_ns, uint8_t *tp) {
+    int64_t s, ns, st; user_clock(&s, &ns, &st);
+    int64_t ft = fixed_time(); if (ft >= 0) { s = ft; ns = 0; }
+    if (user) *user = s;
+    if (user_ns) *user_ns = ns;
+    if (tp) { memcpy(tp, &st, 8); memcpy(tp + 8, STEADY_SOURCE, 16); }
+}
+static int64_t user_now(void) { int64_t s; host_now(&s, NULL, NULL); return s; }
+// PEANUTS end
 HLE_FORCE("_ZN2nn4time10InitializeEv", "connect to the time service; clocks come from the host system time instead", Result, h_time_Initialize, void) { return RES_OK; }
 HLE_FORCE("_ZN2nn4time13IsInitializedEv", "the time service is taken over, always initialized", int, h_time_IsInitialized, void) { return 1; }
-// Steady clock (seconds since boot + a clock source ID, a 16-byte UUID): the host's monotonic seconds with a fixed source ID. GetSpanBetween runs as is in sdk: it subtracts only when the source IDs match
-HLE_FORCE("_ZN2nn4time19StandardSteadyClock19GetCurrentTimePointEPNS0_20SteadyClockTimePointE", "steady clock → host monotonic clock (seconds), fixed source ID", Result, h_time_SteadyNow, uint8_t *out) {
-    int64_t s = (int64_t)(plat_clock_ns(CLOCK_MONOTONIC) / 1000000000ull);
-    memcpy(out, &s, 8); memcpy(out + 8, "dmhost-steady-01", 16); return RES_OK;
+// Steady clock (seconds + a clock source ID, a 16-byte UUID): the host's real-time clock in seconds with a fixed source ID (PEANUTS: it runs through sleep and restarts as the RTC does, issue #329). GetSpanBetween runs as is in sdk: it subtracts only when the source IDs match
+HLE_FORCE("_ZN2nn4time19StandardSteadyClock19GetCurrentTimePointEPNS0_20SteadyClockTimePointE", "steady clock → host real-time clock (seconds), fixed source ID", Result, h_time_SteadyNow, uint8_t *out) {
+    host_now(NULL, NULL, out); return RES_OK;   // PEANUTS: the RTC's part of the one reading (issue #329)
 }
-HLE_FORCE("_ZN2nn4time38GetStandardSteadyClockCurrentTimePointEPNS0_20SteadyClockTimePointE", "steady clock (the free function form, SDK 20) → host monotonic clock", Result, h_time_SteadyNowFn, uint8_t *out) { return h_time_SteadyNow(out); }
+HLE_FORCE("_ZN2nn4time38GetStandardSteadyClockCurrentTimePointEPNS0_20SteadyClockTimePointE", "steady clock (the free function form, SDK 20) → host real-time clock", Result, h_time_SteadyNowFn, uint8_t *out) { return h_time_SteadyNow(out); }   // PEANUTS: issue #329
 HLE_FORCE("_ZN2nn4time23StandardUserSystemClock14GetCurrentTimeEPNS0_9PosixTimeE", "user clock → host time()", Result, h_time_GetCurrentTime, int64_t *out) {
-    int64_t ft = fixed_time(); *out = ft >= 0 ? ft : user_now(); return RES_OK;
+    *out = user_now(); return RES_OK;   // PEANUTS: DM_FIXED_TIME is applied in host_now (issue #329)
 }
 // The adjustable user clock (Animal Crossing: New Horizons 3.0.3, whose days follow it): the SDK keeps it in a MonotonicSystemClock that Adjust sets from the user clock's context, and its
 // GetCurrentTime reads the time service's shared memory, which the host never maps (an abort in MonotonicSystemClock::GetCurrentTime, sdk+0x4421cc on that build). On the host the user clock
@@ -61,15 +103,14 @@ HLE_FORCE("_ZN2nn4time25AdjustableUserSystemClock14GetCurrentTimeEPNS0_9PosixTim
 // 2 = the adjustable one; 0, the system tick, before that), and std::chrono::system_clock::now() throws on its failure. The SDK's getters ask the time service: Ace Attorney Investigations
 // Collection called std::terminate at its first real-time read, right after the first-boot language dialog (main+0x3f3f68; found by armyja, GitHub issue #18). The host user clock, to the nanosecond
 static int h_time_timespec(int64_t *ts) {
-    int64_t ft = fixed_time();
-    if (ft >= 0) { ts[0] = ft; ts[1] = 0; return 0; }
-    user_clock(&ts[0], &ts[1]); return 0;
+    host_now(&ts[0], &ts[1], NULL); return 0;   // PEANUTS: DM_FIXED_TIME is applied in host_now (issue #329)
 }
 HLE_FORCE("_ZN2nn4time41GetStandardUserSystemClockCurrentTimespecEP8timespec", "C library real-time clock from the user clock → host real time", int, h_time_StdTimespec, int64_t *ts) { return h_time_timespec(ts); }
 HLE_FORCE("_ZN2nn4time43GetAdjustableUserSystemClockCurrentTimespecEP8timespec", "C library real-time clock from the adjustable user clock → host real time", int, h_time_AdjTimespec, int64_t *ts) { return h_time_timespec(ts); }
 // The C library's monotonic clock (SDK 22): musl's clock_gettime dispatches CLOCK_MONOTONIC to the steady clock through an ifunc over this symbol, whose SDK implementation asks the time service's
 // shared memory, which the host never maps. Unbound, the call fails and std::chrono::steady_clock::now() throws std::system_error: Well Dweller reached that at its first frame timer read (sdk+0x5f2e58
-// → std::terminate). The host's monotonic clock is the steady clock here, so clock_gettime and the steadiness agree
+// → std::terminate). The host's monotonic clock answers, as clock_gettime's steadiness wants (PEANUTS: not the steady time points' real-time clock, which moves when the phone's
+// clock is set; frame timers measure with this one, issue #329)
 static int h_time_mono_timespec(int64_t *ts) {
     struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); ts[0] = t.tv_sec; ts[1] = t.tv_nsec; return 0;
 }
@@ -78,12 +119,16 @@ HLE_FORCE("_ZN2nn4time37GetStandardSteadyClockCurrentTimespecEP8timespec", "C li
 // The SDK reads it from the time service's shared memory, which the host never opens: it returns 0x74 and writes nothing. Unity's DateTime.UtcNow (Engage main+0x4ad40c; Ace Attorney Investigations
 // 1&2 per PR #14) then never starts its clock and reads 0001-01-01. Unity takes its time from GetCurrentTime plus system ticks and only compares the context to notice the clock being set, so like a
 // Switch's it stays the same until the host clock moves against the guest ticks by more than a second (clock set by hand, a sleep mach_absolute_time did not count); with DM_FIXED_TIME it is made once
+// PEANUTS: the host clock here is the anchored one (host_rt_ns), which a set of the device's clock does not move within a run; a sleep, which the guest ticks do not count, still renews it
 HLE_FORCE("_ZN2nn4time23StandardUserSystemClock21GetSystemClockContextEPNS0_18SystemClockContextE", "user clock context from the time service; the host's user clock over its steady clock, renewed when the host clock is set",
           Result, h_time_GetContext, uint8_t *out) {
     static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER; static uint8_t ctx[0x20]; static int64_t drift; static int made;
-    uint8_t tp[0x18]; int64_t now; h_time_SteadyNow(tp); h_time_GetCurrentTime(&now);
+    pthread_mutex_lock(&mu);   // PEANUTS: read under the lock, so a context of an older reading never replaces a newer one (issue #329)
+    uint8_t tp[0x18]; int64_t now; host_now(&now, NULL, tp);   // PEANUTS: one reading, so the offset is the custom time's own (0 on the phone's clock), issue #329
     int64_t d = now - (int64_t)(guest_ns() / 1000000000ull);
-    pthread_mutex_lock(&mu);
+    // PEANUTS: the guest-tick rule renews the context after a sleep, whose offset is the same: the guest ticks stop in deep sleep (CLOCK_MONOTONIC) and while the guest
+    // clock is frozen, and Unity's clock, its last GetCurrentTime plus the ticks since, re-reads the time only when the context changes; a renewal with the same offset is
+    // no user clock change (CalculateStandardUserSystemClockDifferenceByUser compares offsets)
     if (!made || (fixed_time() < 0 && llabs(d - drift) > 1)) {
         int64_t off = now - *(const int64_t *)tp; memcpy(ctx, &off, 8); memcpy(ctx + 8, tp, 0x18);
         if (made) LOG("time: host clock moved %+lld s against the guest ticks, new user clock context", (long long)(d - drift));
@@ -94,7 +139,7 @@ HLE_FORCE("_ZN2nn4time23StandardUserSystemClock21GetSystemClockContextEPNS0_18Sy
     return RES_OK;
 }
 HLE_FORCE("_ZN2nn4time23StandardUserSystemClock3nowEv", "user clock → host time()", int64_t, h_time_now, void) {
-    int64_t ft = fixed_time(); return ft >= 0 ? ft : user_now(); }
+    return user_now(); }   // PEANUTS: DM_FIXED_TIME is applied in host_now (issue #329)
 HLE_FORCE("_ZN2nn4time23StandardUserSystemClock9to_time_tERKNSt3__16chrono10time_pointINS0_17SystemClockTraitsENS3_8durationIlNS2_5ratioILl1ELl1EEEEEEE",
           "the SDK implementation pairs with now(), taken over with it", int64_t, h_time_to_time_t, const int64_t *tp) { return *tp; }
 HLE_FORCE("_ZN2nn4time14ToCalendarTimeEPNS0_12CalendarTimeEPNS0_22CalendarAdditionalInfoERKNS0_9PosixTimeE",
@@ -119,8 +164,7 @@ HLE_FORCE("_ZN2nn4time26StandardNetworkSystemClock20IsAccuracySufficientEv", "ne
 // Offline, the network fields stay 0, so CalculateSpanBetween (below) uses the steady time points (same source ID)
 HLE_FORCE("_ZN2nn4time13ClockSnapshot29CreateWithStandardSystemClockEPS1_", "snapshot from the time service; the host fills it on the spot (offline: network clock 0)", Result, h_time_Snapshot, uint8_t *s) {
     memset(s, 0, 0xd0);
-    uint8_t tp[0x18]; h_time_SteadyNow(tp);
-    int64_t now; h_time_GetCurrentTime(&now);
+    uint8_t tp[0x18]; int64_t now; host_now(&now, NULL, tp);   // PEANUTS: user time and steady time point of one reading (issue #329)
     h_time_GetContext(s);   // +0x00: the user clock context, the same in every snapshot until the host clock is set (worked out per snapshot it moved by a second at random, a "clock change" to the user difference below)
     memcpy(s + 0x40, &now, 8);
     h_time_ToCalendarTime((CalendarTime *)(s + 0x50), (CalendarAdditionalInfo *)(s + 0x60), &now);
@@ -142,20 +186,33 @@ HLE_FORCE("_ZN2nn4time13ClockSnapshot31CreateWithAdjustableSystemClockEPS1_", "a
 // (Super Smash Bros. Ultimate's Spirit Board refilled at every visit, found by MacNativeGames)
 static int64_t snap64(const uint8_t *s, int off) { int64_t v; memcpy(&v, s + off, 8); return v; }
 static int same_source(const uint8_t *a, const uint8_t *b, int tp) { return !memcmp(a + tp + 8, b + tp + 8, 16); }   // the source IDs of the steady time points at +tp
+// PEANUTS begin: a line for the first few snapshot comparisons a game cannot take at face value (issue #329): two steady clocks, or a user clock change. A save from
+// another console or emulator, or from a host before issue #329's fix, has another source ID; the game decides what a change means (Tomodachi Life warns and holds its shops)
+static void time_note(const char *what, const uint8_t *a, const uint8_t *b, int tp) {
+    static _Atomic int n;
+    if (atomic_fetch_add(&n, 1) >= 8) return;
+    char ha[33], hb[33];
+    for (int i = 0; i < 16; i++) { snprintf(ha + 2 * i, 3, "%02x", a[tp + 8 + i]); snprintf(hb + 2 * i, 3, "%02x", b[tp + 8 + i]); }
+    LOG("time: %s (steady time points %lld of source %s, %lld of source %s)", what, (long long)snap64(a, tp), ha, (long long)snap64(b, tp), hb);
+}
+// PEANUTS end
 HLE_FORCE("_ZN2nn4time20CalculateSpanBetweenEPNS_8TimeSpanERKNS0_13ClockSnapshotES5_", "span between two snapshots (time service): their steady time points, else their network times",
           unsigned, h_time_SpanBetween, int64_t *out, const uint8_t *a, const uint8_t *b) {
     int64_t s;
     if (same_source(a, b, 0x90)) s = snap64(b, 0x90) - snap64(a, 0x90);
-    else if (snap64(a, 0x48) && snap64(b, 0x48)) s = snap64(b, 0x48) - snap64(a, 0x48);
-    else return 0;   // no common clock: the service answers "not found", *out untouched (as the SDK leaves it)
+    else if (snap64(a, 0x48) && snap64(b, 0x48)) { s = snap64(b, 0x48) - snap64(a, 0x48); time_note("CalculateSpanBetween: two steady clocks, the span comes from the network times", a, b, 0x90); }   // PEANUTS: issue #329
+    else { time_note("CalculateSpanBetween: two steady clocks and no network time, the span is unknown", a, b, 0x90); return 0; }   // PEANUTS: issue #329. No common clock: the service answers "not found", *out untouched (as the SDK leaves it)
     *out = s * 1000000000; return 1;
 }
 // How far the user moved the user clock between two snapshots (asked at Pokémon: Let's Go's first save, PR #36): the change of the user clock offset, 0 when the two contexts' steady
-// sources differ or both snapshots have automatic correction on. The snapshots carry h_time_GetContext's context, renewed when the host clock is set, so that shows up here
+// sources differ or both snapshots have automatic correction on. The snapshots carry h_time_GetContext's context, whose offset is the custom time's (PEANUTS: DM_TIME,
+// DM_TIME_OFFSET; 0 on the phone's clock, issue #329), so setting or changing a custom time shows up here and sleep or a restart does not
 HLE_FORCE("_ZN2nn4time48CalculateStandardUserSystemClockDifferenceByUserERKNS0_13ClockSnapshotES3_", "user clock change between two snapshots (time service): from their user clock offsets",
           int64_t, h_time_UserDiff, const uint8_t *a, const uint8_t *b) {
     if (!same_source(a, b, 0x08) || (a[0xcc] && b[0xcc])) return 0;
-    return (snap64(b, 0x00) - snap64(a, 0x00)) * 1000000000;
+    int64_t d = snap64(b, 0x00) - snap64(a, 0x00);   // PEANUTS: issue #329
+    if (d) { char w[96]; snprintf(w, sizeof w, "the user clock was moved %+lld s between two snapshots", (long long)d); time_note(w, a, b, 0x08); }   // PEANUTS: issue #329
+    return d * 1000000000;   // PEANUTS: issue #329
 }
 // The reverse: local calendar → absolute seconds (13 Sentinels). Around a daylight-saving switch one local time maps to 0 or 2 absolute seconds; the host's mktime gives one
 HLE_FORCE("_ZN2nn4time11ToPosixTimeEPiPNS0_9PosixTimeEiRKNS0_12CalendarTimeE",

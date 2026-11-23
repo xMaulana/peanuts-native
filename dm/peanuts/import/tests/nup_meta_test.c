@@ -8,6 +8,7 @@
 //   a base without control data: main.npdm only, and the .nup is made as before
 //   a NACP whose only title is French, without a display version, beside an "icon" that is no image: the French title, no icon, no version
 //   an update without its base: the first package carries the application's records
+//   a base and its update by default (no nximport_set_keep_base): the base package is left out, the update is standalone and carries the application's records
 #define _GNU_SOURCE
 #include <ftw.h>
 #include <stdint.h>
@@ -105,7 +106,7 @@ static void write_file(const char *dir, const char *name, const uint8_t *p, size
 
 static int rm_cb(const char *p, const struct stat *st, int flag, struct FTW *f) { (void)st; (void)flag; (void)f; return remove(p); }
 int main(int argc, char **argv) {
-    char dir[500], keys[600], base[600], upd[600], nup[700]; const char *td = getenv("TMPDIR"); FxKeys k; FxAddon dlc; View v; Rec r[16]; int n;
+    char dir[500], keys[600], base[600], base_q[600], upd[600], nup[700]; const char *td = getenv("TMPDIR"); FxKeys k; FxAddon dlc; View v; Rec r[16]; int n;
     int keep = argc > 1;
     if (keep) snprintf(dir, sizeof dir, "%s", argv[1]);
     else { snprintf(dir, sizeof dir, "%s/nup_meta_test-XXXXXX", td && *td ? td : "/tmp"); if (!mkdtemp(dir)) { perror(dir); return 2; } }
@@ -120,13 +121,15 @@ int main(int argc, char **argv) {
     uint8_t *icon_en = jpeg(3000), *icon_ja = jpeg(2500), *icon_up = jpeg(2800);
     FxCtl ca = { na, 0x4000, { { "icon_AmericanEnglish.dat", icon_en, 3000 }, { "icon_Japanese.dat", icon_ja, 2500 } } };
     FxCtl cu = { nb, 0x4000, { { "icon_AmericanEnglish.dat", icon_up, 2800 }, { NULL, NULL, 0 } } };
-    snprintf(base, sizeof base, "%s/quest-base.nsp", dir); snprintf(upd, sizeof upd, "%s/quest-update.nsp", dir);
+    snprintf(base, sizeof base, "%s/quest-base.nsp", dir); snprintf(upd, sizeof upd, "%s/quest-update.nsp", dir); snprintf(base_q, sizeof base_q, "%s", base);
     dump(&k, base, TID, TID, 0, 0, &ca);
     dump(&k, upd, TID + 0x800, TID, 1, 0x20000, &cu);
     fx_addon(&k, dir, "quest-dlc", TID, 1, 0, 3, &dlc);
     write_file(dir, "quest-icon.jpg", icon_en, 3000);
     { const char *in[3] = { base, upd, dlc.path }; snprintf(nup, sizeof nup, "%s/quest.nup", dir);
-      CHECK(!nximport_write_nup(nup, in, 3, tid, NULL, NULL), "the importer makes the .nup (%s)", nximport_last_error()); }
+      nximport_set_keep_base(1);   // the base package kept, as a .nup made before 2026-11-21 has it
+      CHECK(!nximport_write_nup(nup, in, 3, tid, NULL, NULL), "the importer makes the .nup (%s)", nximport_last_error());
+      nximport_set_keep_base(0); }
     CHECK(!nximport_verify_nup(nup, NULL, NULL), "and it verifies (%s)", nximport_last_error());
     CHECK(!view(nup, &v) && v.fsize == v.n && v.npk == 3, "the superblock's file size is the file's (%llu), three packages", (unsigned long long)v.fsize);
     { int b = pkg_of(&v, 0), u = pkg_of(&v, 1), a = pkg_of(&v, 2); Pkg pb = pkg(&v, (uint32_t)b), pu = pkg(&v, (uint32_t)u), pa = pkg(&v, (uint32_t)a);
@@ -177,6 +180,19 @@ int main(int argc, char **argv) {
     { Pkg p = pkg(&v, 0); n = recs(&v, &p, r, 16);
       CHECK(types_are(r, n, "123456") && bytes_are(rec(r, n, 3), icon_up, 2800) && text_is(rec(r, n, 4), "1.2.0") && text_is(rec(r, n, 5), "Fixture Quest"),
             "it carries the application's records: the update's icon, version and title"); }
+    free(v.b);
+
+    // ---- a base and its update by default: the base package left out
+    printf("a base and its update, by default (no base package)\n");
+    { const char *in[3] = { base_q, upd, dlc.path }; snprintf(nup, sizeof nup, "%s/quest-default.nup", dir);
+      CHECK(!nximport_write_nup(nup, in, 3, tid, NULL, NULL), "the .nup is made (%s)", nximport_last_error()); }
+    CHECK(!nximport_verify_nup(nup, NULL, NULL), "and it verifies (%s)", nximport_last_error());
+    CHECK(!view(nup, &v) && v.npk == 2 && pkg_of(&v, 0) < 0 && pkg_of(&v, 1) >= 0 && pkg_of(&v, 2) >= 0, "two packages: the update and the add-on, no base");
+    { int u = pkg_of(&v, 1); Pkg p = pkg(&v, (uint32_t)u); n = recs(&v, &p, r, 16);
+      CHECK(v.b[0x80 + 0x30 + 0x40 * u + 0x19] == 1, "the update is marked standalone");
+      CHECK(types_are(r, n, "123456") && bytes_are(rec(r, n, 3), icon_up, 2800) && text_is(rec(r, n, 5), "Fixture Quest"), "it carries the application's records"); }
+    { size_t len; uint8_t *b = extract(nup, "update/131072/romfs/b.txt", dir, &len);
+      CHECK(b && len == 5 && !memcmp(b, "hello", 5), "a file of the update's RomFS reads"); free(b); }
     free(v.b);
 
     free(na); free(nb); free(nf); free(icon_en); free(icon_ja); free(icon_up);
