@@ -30,3 +30,4 @@ export MSBuildEnableWorkloadResolver=false   # this machine's dotnet SDK has bro
 
 zsh "$REPO/android/ondevice/build.sh" "$@"
 sh "$REPO/dm/peanuts/pack_worker/build.sh" "$1/stage" "$1/py/prefix/include/python3.14"   # PEANUTS hook: nxpack_worker into stage/python/bin (shader_split.py's pool workers on the phone)
+sh "$REPO/dm/peanuts/rust_pack/build.sh" "$1/stage"   # PEANUTS hook: libpn_pack.so into stage/lib (Rust shader splitter / SPIR-V acceleration)
