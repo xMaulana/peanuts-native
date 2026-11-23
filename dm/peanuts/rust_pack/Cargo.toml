@@ -1,0 +1,16 @@
+[package]
+name = "pn_pack"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pn_pack"
+crate-type = ["cdylib"]
+
+[dependencies]
+memmap2 = "0.9"
+rayon = "1.10"
+sha2 = "0.10"
+flate2 = "1.0"
+zstd = "0.13"
+lz4_flex = "0.11"
